@@ -1,9 +1,20 @@
 # Group-Geetest-Verify
 入群验证码插件，使用极验Geetest V4验证，有效防止机器人入群。
 
+<div align="center">
+
+![Group-Geetest-Verify](https://socialify.git.ci/VanillaNahida/astrbot_plugin_group_geetest_verify/image?description=1&font=KoHo&forks=1&issues=1&language=1&name=1&owner=1&pattern=Circuit%20Board&pulls=1&stargazers=1&theme=Auto)
+
 <p align="center">
   <img src="logo.png" alt="Group-Geetest-Verify Logo">
 </p>
+
+[![GitHub license](https://img.shields.io/github/license/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/network)
+[![GitHub issues](https://img.shields.io/github/issues/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/issues)
+[![python3](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg?style=flat-square)]()
 
 # 效果展示
 
@@ -17,14 +28,14 @@
 3. 安装了PHP 8.4的服务器，可使用[宝塔面板](https://www.bt.cn/)按照文档安装
 
 # 部署后端
-请查看[安装步骤](https://github.com/VanillaNahida/group-verify-service#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)
+请查看[安装步骤](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)
 
 # 使用方法
 1. 在插件市场搜索插件 `astrbot_plugin_group_geetest_verify` 或 `入群网页验证插件`
 2. 安装插件
 3. 配置插件
     1. 登录极验Geetest官网，注册账号并创建一个新的Geetest V4项目
-    2. 按照[文档](https://github.com/VanillaNahida/group-verify-service#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)部署验证后端服务，按照文档配置好Geetest的ID和Key并启动。
+    2. 按照[文档](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)部署验证后端服务，按照文档配置好Geetest的ID和Key并启动。
     4. 在插件配置中填写验证后端服务的相关信息，包括`验证后端地址`、`API Key`等（API Key不会自动生成，请自行填写）
     4. 配置入群验证的相关参数，如验证超时时间、验证失败后的操作等。
     5. （可选）开启等级验证功能，设置最低QQ等级，高等级用户入群时将自动跳过验证。

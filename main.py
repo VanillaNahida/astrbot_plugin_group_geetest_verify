@@ -223,15 +223,24 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         # 检查是否启用了等级验证
+        at_user = f"[CQ:at,qq={uid}]"
+        skip_verify = False
         if self.enable_level_verify:
             qq_level = await self._get_user_level(uid)
             if qq_level >= self.min_qq_level:
                 logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {self.min_qq_level}，跳过验证流程")
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {self.min_qq_level}级，已跳过验证流程。")
                 # 标记用户为已验证
                 await self.put_kv_data(f"{gid}:{uid}_verify_status", "verified")
                 await self.put_kv_data(f"{gid}:{uid}_verified", True)
                 await self.put_kv_data(f"{gid}:{uid}_verify_time", asyncio.get_event_loop().time())
-                return
+                skip_verify = True
+            else:
+                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {self.min_qq_level}，将进入验证流程")
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {self.min_qq_level}级，将进入验证流程。")
+        
+        if skip_verify:
+            return
         
         # 存储用户的入群验证信息
         question, answer = self._generate_math_problem()
@@ -272,7 +281,7 @@ class GroupGeetestVerifyPlugin(Star):
 
         at_user = f"[CQ:at,qq={uid}]"
         timeout_minutes = self.verification_timeout // 60
-        
+
         # 如果启用了极验验证，优先使用极验验证
         if self.enable_geetest_verify and self.api_key:
             try:
@@ -291,7 +300,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 回退到算术验证
         self.pending[uid]["verify_method"] = "math"
         if is_new_member:
-            prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内 @我 并回答下面的问题以完成验证：\n{question}"
+            prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内回答下面的问题以完成验证：\n{question}"
         else:
             prompt_message = f"{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}"
 
@@ -463,8 +472,8 @@ class GroupGeetestVerifyPlugin(Star):
     async def _get_user_level(self, uid: str) -> int:
         """获取用户QQ等级"""
         try:
-            user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_user_info", user_id=int(uid))
-            qq_level = user_info.get("qqLevel", 0)
+            user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_stranger_info", user_id=int(uid))
+            qq_level = user_info.get("data", {}).get("qqLevel", 0)
             logger.info(f"[Geetest Verify] 用户 {uid} 的QQ等级为: {qq_level}")
             return qq_level
         except Exception as e:

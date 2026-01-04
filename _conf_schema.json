@@ -20,7 +20,7 @@
   "new_member_prompt": {
     "description": "新成员入群提示语",
     "type": "string",
-    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内 @我 并回答下面的问题以完成验证：\n{question}",
+    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内回答下面的问题以完成验证：\n{question}",
     "hint": "用户入群时的提示语。可用变量: {at_user}, {question}, {timeout} (分钟)。"
   },
   "welcome_message": {
@@ -38,13 +38,13 @@
   "failure_message": {
     "description": "验证超时提示语",
     "type": "string",
-    "default": "{at_user} 验证超时，你将在 {countdown} 秒后被请出本群。",
+    "default": "{at_user} 很抱歉，您对验证的响应超时，您将在 {countdown} 秒后被请出本群。",
     "hint": "用户因超时而验证失败后，踢出前发送的消息。可用变量: {at_user}, {countdown} (踢出延迟秒数)。"
   },
   "kick_message": {
     "description": "最终踢出提示语",
     "type": "string",
-    "default": "{at_user} 因未在规定时间内完成验证，已被请出本群。",
+    "default": "{at_user} 很抱歉，您因未在规定时间内完成验证，已被请出本群。",
     "hint": "用户被踢出后发送的公开消息。可用变量: {at_user}。"
   },
   "max_wrong_answers": {
@@ -56,7 +56,7 @@
   "too_many_wrong_message": {
     "description": "错误次数过多踢出提示语",
     "type": "string",
-    "default": "{at_user} 你已连续回答错误 {count} 次，将被请出本群。",
+    "default": "{at_user} 很抱歉，你已连续回答错误 {count} 次，将被请出本群。",
     "hint": "用户回答错误次数过多时发送的消息。可用变量: {at_user}, {count} (错误次数)。"
   },
   "api_base_url": {

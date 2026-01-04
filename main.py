@@ -227,7 +227,7 @@ class GroupGeetestVerifyPlugin(Star):
         at_user = f"[CQ:at,qq={uid}]"
         timeout_minutes = self.verification_timeout // 60
         
-        # 优先尝试使用极验验证
+        # 如果启用了极验验证，优先使用极验验证
         if self.enable_geetest_verify and self.api_key:
             try:
                 verify_url = await self._create_geetest_verify(gid, uid)
@@ -236,7 +236,7 @@ class GroupGeetestVerifyPlugin(Star):
                     if is_new_member:
                         prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
                     else:
-                        prompt_message = f"{at_user} 请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                        prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
                     await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
                     return
             except Exception as e:

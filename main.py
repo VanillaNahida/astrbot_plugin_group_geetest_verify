@@ -475,7 +475,21 @@ class GroupGeetestVerifyPlugin(Star):
         try:
             user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_stranger_info", user_id=int(uid))
             logger.info(f"[Geetest Verify] 用户 {uid} 的API返回数据: {user_info}")
-            qq_level = user_info.get("data", {}).get("qqLevel", 0)
+            
+            # 尝试多种方式获取 qqLevel
+            qq_level = 0
+            for key in user_info.keys():
+                if key.lower() == "qqlevel":
+                    qq_level = user_info[key]
+                    break
+            
+            # 如果顶层没找到，尝试从 data 中获取
+            if qq_level == 0 and isinstance(user_info.get("data"), dict):
+                for key in user_info["data"].keys():
+                    if key.lower() == "qqlevel":
+                        qq_level = user_info["data"][key]
+                        break
+            
             logger.info(f"[Geetest Verify] 用户 {uid} 的QQ等级为: {qq_level}")
             return qq_level
         except Exception as e:

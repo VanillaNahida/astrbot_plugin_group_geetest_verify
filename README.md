@@ -1,6 +1,10 @@
 # Group-Geetest-Verify
 入群验证码插件，使用极验Geetest V4验证，有效防止机器人入群。
 
+<p align="center">
+  <img src="logo.png" alt="Group-Geetest-Verify Logo">
+</p>
+
 # 前置条件
 1. 一台有公网IP的服务器
 2. 一个不要钱的域名，用来托管验证后端服务
@@ -32,6 +36,10 @@
 | `/开启等级验证` | `/开启等级验证` | 群主/管理员 | 开启等级验证功能，QQ等级达到最低等级的用户将自动跳过验证 |
 | `/关闭等级验证` | `/关闭等级验证` | 群主/管理员 | 关闭等级验证功能 |
 | `/设置最低验证等级` | `/设置最低验证等级 等级数` | 群主/管理员 | 设置最低验证等级（0-64），QQ等级大于等于此等级的用户将自动跳过验证 |
+
+# 致谢
+- [@yjwmidc](https://github.com/yjwmidc/) 验证后端贡献者
+- [astrbot_plugin_Group-Verification_PRO](https://github.com/huntuo146/astrbot_plugin_Group-Verification_PRO) 参考该代码实现的入群验证插件，感谢该项目作者。
 
 # bug反馈
 如果在使用过程中遇到任何问题，请通过以下方式反馈：

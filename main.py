@@ -457,6 +457,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         await self.put_kv_data(f"{gid}:{uid}_verified", False)
         await self.put_kv_data(f"{gid}:{uid}_verify_status", "pending")
+        await self.put_kv_data(f"{gid}:{uid}_bypassed", False)
         logger.info(f"[Geetest Verify] 用户 {uid} 已离开群 {gid}，清除验证状态")
 
     async def _check_user_permission(self, event: AstrMessageEvent, uid: str, gid: int) -> bool:
@@ -473,6 +474,7 @@ class GroupGeetestVerifyPlugin(Star):
         """获取用户QQ等级"""
         try:
             user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_stranger_info", user_id=int(uid))
+            logger.info(f"[Geetest Verify] 用户 {uid} 的API返回数据: {user_info}")
             qq_level = user_info.get("data", {}).get("qqLevel", 0)
             logger.info(f"[Geetest Verify] 用户 {uid} 的QQ等级为: {qq_level}")
             return qq_level

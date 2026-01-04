@@ -45,13 +45,17 @@ class GroupGeetestVerifyPlugin(Star):
             self.api_base_url = self.config.get("api_base_url", schema_defaults.get("api_base_url", "http://localhost:8000"))
             self.api_key = self.config.get("api_key", schema_defaults.get("api_key", ""))
             self.enable_geetest_verify = self.config.get("enable_geetest_verify", schema_defaults.get("enable_geetest_verify", False))
-        except:
+            self.enable_level_verify = self.config.get("enable_level_verify", schema_defaults.get("enable_level_verify", False))
+            self.min_qq_level = self.config.get("min_qq_level", schema_defaults.get("min_qq_level", 20))
+        except Exception:
             self.enabled_groups = schema_defaults.get("enabled_groups", [])
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
             self.max_wrong_answers = schema_defaults.get("max_wrong_answers", 5)
             self.api_base_url = schema_defaults.get("api_base_url", "http://localhost:8000")
             self.api_key = schema_defaults.get("api_key", "")
             self.enable_geetest_verify = schema_defaults.get("enable_geetest_verify", False)
+            self.enable_level_verify = schema_defaults.get("enable_level_verify", False)
+            self.min_qq_level = schema_defaults.get("min_qq_level", 20)
 
     async def _create_geetest_verify(self, gid: int, uid: str) -> str:
         """调用极验 API 生成验证链接"""
@@ -63,7 +67,7 @@ class GroupGeetestVerifyPlugin(Star):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"AstrBot/v4.7.0"
+            "User-Agent": "AstrBot/v4.7.0"
         }
         data = {
             "group_id": str(gid),
@@ -115,7 +119,7 @@ class GroupGeetestVerifyPlugin(Star):
                     if response.status == 200:
                         result = await response.json()
                         if result.get("code") == 0 and result.get("passed"):
-                            logger.info(f"[Geetest Verify] 验证码验证成功")
+                            logger.info("[Geetest Verify] 验证码验证成功")
                             return True
                         else:
                             logger.info(f"[Geetest Verify] 验证码验证失败: {result.get('msg')}")
@@ -153,7 +157,6 @@ class GroupGeetestVerifyPlugin(Star):
 
         raw = event.message_obj.raw_message
         post_type = raw.get("post_type")
-        gid = raw.get("group_id")
         
         if post_type == "notice":
             if raw.get("notice_type") == "group_increase":
@@ -181,16 +184,27 @@ class GroupGeetestVerifyPlugin(Star):
                 return
         
         # 检查用户是否已被标记为绕过验证
-        bypassed = await self.get_kv_data(f"{uid}_bypassed", False)
+        bypassed = await self.get_kv_data(f"{gid}:{uid}_bypassed", False)
         if bypassed:
-            logger.info(f"[Geetest Verify] 用户 {uid} 已标记为绕过验证，跳过验证流程")
+            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已标记为绕过验证，跳过验证流程")
             return
         
         # 检查用户是否已验证过
-        verified = await self.get_kv_data(f"{uid}_verified", False)
+        verified = await self.get_kv_data(f"{gid}:{uid}_verified", False)
         if verified:
-            logger.info(f"[Geetest Verify] 用户 {uid} 已验证过，跳过验证流程")
+            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已验证过，跳过验证流程")
             return
+        
+        # 检查是否启用了等级验证
+        if self.enable_level_verify:
+            qq_level = await self._get_user_level(uid)
+            if qq_level >= self.min_qq_level:
+                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {self.min_qq_level}，跳过验证流程")
+                # 标记用户为已验证
+                await self.put_kv_data(f"{gid}:{uid}_verify_status", "verified")
+                await self.put_kv_data(f"{gid}:{uid}_verified", True)
+                await self.put_kv_data(f"{gid}:{uid}_verify_time", asyncio.get_event_loop().time())
+                return
         
         # 存储用户的入群验证信息
         question, answer = self._generate_math_problem()
@@ -200,8 +214,8 @@ class GroupGeetestVerifyPlugin(Star):
             "question": question,
             "answer": answer
         }
-        await self.put_kv_data(f"{uid}_verify_info", verify_info)
-        await self.put_kv_data(f"{uid}_verify_status", "pending")
+        await self.put_kv_data(f"{gid}:{uid}_verify_info", verify_info)
+        await self.put_kv_data(f"{gid}:{uid}_verify_status", "pending")
         
         logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
         
@@ -282,11 +296,10 @@ class GroupGeetestVerifyPlugin(Star):
                 self.pending.pop(uid, None)
 
                 # 更新验证状态
-                await self.put_kv_data(f"{uid}_verify_status", "verified")
-                await self.put_kv_data(f"{uid}_verified", True)
-                await self.put_kv_data(f"{uid}_verify_time", asyncio.get_event_loop().time())
+                await self.put_kv_data(f"{gid}:{uid}_verify_status", "verified")
+                await self.put_kv_data(f"{gid}:{uid}_verified", True)
+                await self.put_kv_data(f"{gid}:{uid}_verify_time", asyncio.get_event_loop().time())
 
-                nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
                 welcome_msg = f"[CQ:at,qq={uid}] 验证成功，欢迎你的加入！"
                 await event.bot.api.call_action("send_group_msg", group_id=gid, message=welcome_msg)
                 event.stop_event()
@@ -342,11 +355,10 @@ class GroupGeetestVerifyPlugin(Star):
                 self.pending.pop(uid, None)
 
                 # 更新验证状态
-                await self.put_kv_data(f"{uid}_verify_status", "verified")
-                await self.put_kv_data(f"{uid}_verified", True)
-                await self.put_kv_data(f"{uid}_verify_time", asyncio.get_event_loop().time())
-
-                nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
+                await self.put_kv_data(f"{gid}:{uid}_verify_status", "verified")
+                await self.put_kv_data(f"{gid}:{uid}_verified", True)
+                await self.put_kv_data(f"{gid}:{uid}_verify_time", asyncio.get_event_loop().time())
+                # nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
                 welcome_msg = f"[CQ:at,qq={uid}] 验证成功，欢迎你的加入！"
                 await event.bot.api.call_action("send_group_msg", group_id=gid, message=welcome_msg)
                 event.stop_event()
@@ -383,25 +395,28 @@ class GroupGeetestVerifyPlugin(Star):
                 
                 # 更新验证信息
                 question, answer = self._generate_math_problem()
-                verify_info = await self.get_kv_data(f"{uid}_verify_info", {})
+                verify_info = await self.get_kv_data(f"{gid}:{uid}_verify_info", {})
                 verify_info["question"] = question
                 verify_info["answer"] = answer
-                await self.put_kv_data(f"{uid}_verify_info", verify_info)
+                await self.put_kv_data(f"{gid}:{uid}_verify_info", verify_info)
                 
                 await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False)
                 event.stop_event()
 
     async def _process_member_decrease(self, event: AstrMessageEvent):
         """处理成员离开"""
-        uid = str(event.message_obj.raw_message.get("user_id"))
+        raw = event.message_obj.raw_message
+        uid = str(raw.get("user_id"))
+        gid = raw.get("group_id")
+        
         if uid in self.pending:
             self.pending[uid]["task"].cancel()
             self.pending.pop(uid, None)
             logger.info(f"[Geetest Verify] 待验证用户 {uid} 已离开，清理其验证状态")
         
-        await self.put_kv_data(f"{uid}_verified", False)
-        await self.put_kv_data(f"{uid}_verify_status", "pending")
-        logger.info(f"[Geetest Verify] 用户 {uid} 已离开，清除验证状态")
+        await self.put_kv_data(f"{gid}:{uid}_verified", False)
+        await self.put_kv_data(f"{gid}:{uid}_verify_status", "pending")
+        logger.info(f"[Geetest Verify] 用户 {uid} 已离开群 {gid}，清除验证状态")
 
     async def _check_user_permission(self, event: AstrMessageEvent, uid: str, gid: int) -> bool:
         """检查用户是否是群主或管理员"""
@@ -412,6 +427,17 @@ class GroupGeetestVerifyPlugin(Star):
         except Exception as e:
             logger.error(f"[Geetest Verify] 检查用户权限失败: {e}")
             return False
+
+    async def _get_user_level(self, uid: str) -> int:
+        """获取用户QQ等级"""
+        try:
+            user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_user_info", user_id=int(uid))
+            qq_level = user_info.get("qqLevel", 0)
+            logger.info(f"[Geetest Verify] 用户 {uid} 的QQ等级为: {qq_level}")
+            return qq_level
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 获取用户 {uid} 的QQ等级失败: {e}")
+            return 0
 
     async def _timeout_kick(self, uid: str, gid: int):
         """处理超时踢出的协程"""
@@ -491,9 +517,9 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         # 清除用户的验证状态
-        await self.put_kv_data(f"{target_uid}_verify_status", "pending")
-        await self.put_kv_data(f"{target_uid}_verified", False)
-        await self.put_kv_data(f"{target_uid}_bypassed", False)
+        await self.put_kv_data(f"{gid}:{target_uid}_verify_status", "pending")
+        await self.put_kv_data(f"{gid}:{target_uid}_verified", False)
+        await self.put_kv_data(f"{gid}:{target_uid}_bypassed", False)
         
         # 如果用户正在验证中，取消之前的任务
         if target_uid in self.pending:
@@ -510,7 +536,7 @@ class GroupGeetestVerifyPlugin(Star):
             "question": question,
             "answer": answer
         }
-        await self.put_kv_data(f"{target_uid}_verify_info", verify_info)
+        await self.put_kv_data(f"{gid}:{target_uid}_verify_info", verify_info)
         
         logger.info(f"[Geetest Verify] 用户 {target_uid} 被强制重新验证，生成问题: {question} (答案: {answer})")
         
@@ -538,12 +564,12 @@ class GroupGeetestVerifyPlugin(Star):
                     continue
                 
                 # 检查用户是否已验证过
-                verified = await self.get_kv_data(f"{member_uid}_verified", False)
+                verified = await self.get_kv_data(f"{gid}:{member_uid}_verified", False)
                 if verified:
                     continue
                 
                 # 检查用户是否已被标记为绕过验证
-                bypassed = await self.get_kv_data(f"{member_uid}_bypassed", False)
+                bypassed = await self.get_kv_data(f"{gid}:{member_uid}_bypassed", False)
                 if bypassed:
                     continue
                 
@@ -555,8 +581,8 @@ class GroupGeetestVerifyPlugin(Star):
                     "question": question,
                     "answer": answer
                 }
-                await self.put_kv_data(f"{member_uid}_verify_info", verify_info)
-                await self.put_kv_data(f"{member_uid}_verify_status", "pending")
+                await self.put_kv_data(f"{gid}:{member_uid}_verify_info", verify_info)
+                await self.put_kv_data(f"{gid}:{member_uid}_verify_status", "pending")
                 
                 # 如果用户正在验证中，取消之前的任务
                 if member_uid in self.pending:
@@ -611,8 +637,8 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         # 标记用户为绕过验证
-        await self.put_kv_data(f"{target_uid}_bypassed", True)
-        await self.put_kv_data(f"{target_uid}_verify_status", "bypassed")
+        await self.put_kv_data(f"{gid}:{target_uid}_bypassed", True)
+        await self.put_kv_data(f"{gid}:{target_uid}_verify_status", "bypassed")
         
         # 如果用户正在验证中，取消任务
         if target_uid in self.pending:
@@ -718,3 +744,98 @@ class GroupGeetestVerifyPlugin(Star):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 建议至少一分钟(60秒)哦ε(*´･ω･)з")
         
         logger.info(f"[Geetest Verify] 群 {gid} 验证超时时间设置为 {timeout} 秒")
+
+    @filter.command("开启等级验证")
+    async def enable_level_verify_command(self, event: AstrMessageEvent):
+        """开启等级验证"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
+        
+        # 检查是否已开启
+        if self.enable_level_verify:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 等级验证已处于开启状态")
+            return
+        
+        # 开启等级验证
+        self.enable_level_verify = True
+        
+        # 更新配置文件
+        try:
+            self.config.set("enable_level_verify", True)
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已开启等级验证，QQ等级大于等于 {self.min_qq_level} 级的用户将自动跳过验证")
+        logger.info(f"[Geetest Verify] 群 {gid} 已开启等级验证")
+
+    @filter.command("关闭等级验证")
+    async def disable_level_verify_command(self, event: AstrMessageEvent):
+        """关闭等级验证"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
+        
+        # 检查是否已关闭
+        if not self.enable_level_verify:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 等级验证暂未开启")
+            return
+        
+        # 关闭等级验证
+        self.enable_level_verify = False
+        
+        # 更新配置文件
+        try:
+            self.config.set("enable_level_verify", False)
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已关闭等级验证")
+        logger.info(f"[Geetest Verify] 群 {gid} 已关闭等级验证")
+
+    @filter.command("设置最低验证等级")
+    async def set_min_level_command(self, event: AstrMessageEvent):
+        """设置最低验证等级"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
+        
+        # 从消息中提取数字
+        text = event.message_str
+        match = re.search(r'(\d+)', text)
+        if not match:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 请输入正确的等级（0-64）")
+            return
+        
+        min_level = int(match.group(1))
+        
+        # 验证等级范围
+        if min_level < 0 or min_level > 64:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 等级必须在 0-64 之间")
+            return
+        
+        self.min_qq_level = min_level
+        
+        # 更新配置文件
+        try:
+            self.config.set("min_qq_level", min_level)
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已将最低验证等级设置为 {min_level} 级")
+        logger.info(f"[Geetest Verify] 群 {gid} 最低验证等级设置为 {min_level} 级")

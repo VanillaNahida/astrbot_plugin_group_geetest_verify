@@ -76,5 +76,17 @@
     "type": "bool",
     "default": false,
     "hint": "是否启用极验验证。如果启用，将使用极验验证后端服务进行验证；如果禁用，将使用本地数学题验证。"
+  },
+  "enable_level_verify": {
+    "description": "启用等级验证",
+    "type": "bool",
+    "default": false,
+    "hint": "是否启用等级验证。如果启用，QQ等级大于等于最低等级的用户将自动跳过验证。"
+  },
+  "min_qq_level": {
+    "description": "最低QQ等级",
+    "type": "int",
+    "default": 20,
+    "hint": "启用等级验证时，用户QQ等级达到此等级将自动跳过验证。默认 20 级（皇爵）。"
   }
 }

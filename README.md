@@ -1,18 +1,22 @@
 # Group-Geetest-Verify
-入群验证码插件，使用极验Geetest V4验证，有效防止机器人入群。
+一个AstrBot的入群验证码插件，使用极验Geetest V4验证，有效防止机器人入群。
 
 ![Group-Geetest-Verify](https://socialify.git.ci/VanillaNahida/astrbot_plugin_group_geetest_verify/image?description=1&font=KoHo&forks=1&issues=1&language=1&name=1&owner=1&pattern=Circuit%20Board&pulls=1&stargazers=1&theme=Auto)
+
+<div align="center">
+  
+  [![GitHub license](https://img.shields.io/github/license/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/blob/main/LICENSE)
+  [![GitHub stars](https://img.shields.io/github/stars/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/stargazers)
+  [![GitHub forks](https://img.shields.io/github/forks/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/network)
+  [![GitHub issues](https://img.shields.io/github/issues/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/issues)
+  [![python3](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)](https://www.python.org/)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg?style=flat-square)]()
+  
+</div>
 
 <p align="center">
   <img src="logo.png" alt="Group-Geetest-Verify Logo">
 </p>
-
-[![GitHub license](https://img.shields.io/github/license/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/blob/main/LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/network)
-[![GitHub issues](https://img.shields.io/github/issues/VanillaNahida/astrbot_plugin_group_geetest_verify?style=flat-square)](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify/issues)
-[![python3](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg?style=flat-square)]()
 
 # 效果展示
 

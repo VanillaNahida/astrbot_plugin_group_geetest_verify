@@ -1,24 +1,512 @@
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.star import Context, Star, register
-from astrbot.api import logger
+import asyncio
+import random
+import re
+from typing import Dict, Any, Tuple
 
-@register("helloworld", "YourName", "一个简单的 Hello World 插件", "1.0.0")
-class MyPlugin(Star):
+from astrbot.api import logger
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.star import Context, Star, register
+
+
+@register(
+    "group_geetest_verify",
+    "香草味的纳西妲喵（VanillaNahida）",
+    "QQ群极验验证插件",
+    "1.0.0"
+)
+class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+        self.context = context
+        
+        # 待处理的验证: { "user_id": {"gid": group_id, "answer": correct_answer, "task": asyncio.Task, "wrong_count": 0} }
+        self.pending: Dict[str, Dict[str, Any]] = {}
+        
+        # 验证超时时间（秒）
+        self.verification_timeout = 300
+        
+        # 最大错误回答次数
+        self.max_wrong_answers = 5
+        
+        # 从配置文件读取启用的群列表
+        try:
+            self.enabled_groups = self.config.get("enabled_groups", [])
+            self.verification_timeout = self.config.get("verification_timeout", 300)
+            self.max_wrong_answers = self.config.get("max_wrong_answers", 5)
+        except:
+            self.enabled_groups = []
 
-    async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
+    def _generate_math_problem(self) -> Tuple[str, int]:
+        """生成一个100以内的加减法问题"""
+        op_type = random.choice(['add', 'sub'])
+        if op_type == 'add':
+            num1 = random.randint(0, 100)
+            num2 = random.randint(0, 100 - num1)
+            answer = num1 + num2
+            question = f"{num1} + {num2} = ?"
+            return question, answer
+        else:
+            num1 = random.randint(1, 100)
+            num2 = random.randint(0, num1)
+            answer = num1 - num2
+            question = f"{num1} - {num2} = ?"
+            return question, answer
 
-    # 注册指令的装饰器。指令名为 helloworld。注册成功后，发送 `/helloworld` 就会触发这个指令，并回复 `你好, {user_name}!`
-    @filter.command("helloworld")
-    async def helloworld(self, event: AstrMessageEvent):
-        """这是一个 hello world 指令""" # 这是 handler 的描述，将会被解析方便用户了解插件内容。建议填写。
-        user_name = event.get_sender_name()
-        message_str = event.message_str # 用户发的纯文本消息字符串
-        message_chain = event.get_messages() # 用户所发的消息的消息链 # from astrbot.api.message_components import *
-        logger.info(message_chain)
-        yield event.plain_result(f"Hello, {user_name}, 你发了 {message_str}!") # 发送一条纯文本消息
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def handle_event(self, event: AstrMessageEvent):
+        if event.get_platform_name() != "aiocqhttp":
+            return
 
-    async def terminate(self):
-        """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        raw = event.message_obj.raw_message
+        post_type = raw.get("post_type")
+        gid = raw.get("group_id")
+        
+        if post_type == "notice":
+            if raw.get("notice_type") == "group_increase":
+                await self._process_new_member(event)
+            elif raw.get("notice_type") == "group_decrease":
+                await self._process_member_decrease(event)
+        elif post_type == "message" and raw.get("message_type") == "group":
+            await self._process_verification_message(event)
+
+    async def _process_new_member(self, event: AstrMessageEvent):
+        """处理新成员入群"""
+        raw = event.message_obj.raw_message
+        uid = str(raw.get("user_id"))
+        gid = raw.get("group_id")
+        
+        # 检查群是否开启了验证
+        # 如果 enabled_groups 为空，则对所有群生效（检查 KV 数据库）
+        # 如果 enabled_groups 不为空，则只对列表中的群生效
+        if self.enabled_groups:
+            if gid not in self.enabled_groups:
+                return
+        else:
+            enabled = await self.get_kv_data(f"group_{gid}_enabled", False)
+            if not enabled:
+                return
+        
+        # 检查用户是否已被标记为绕过验证
+        bypassed = await self.get_kv_data(f"{uid}_bypassed", False)
+        if bypassed:
+            logger.info(f"[Geetest Verify] 用户 {uid} 已标记为绕过验证，跳过验证流程")
+            return
+        
+        # 检查用户是否已验证过
+        verified = await self.get_kv_data(f"{uid}_verified", False)
+        if verified:
+            logger.info(f"[Geetest Verify] 用户 {uid} 已验证过，跳过验证流程")
+            return
+        
+        # 存储用户的入群验证信息
+        question, answer = self._generate_math_problem()
+        verify_info = {
+            "gid": gid,
+            "join_time": asyncio.get_event_loop().time(),
+            "question": question,
+            "answer": answer
+        }
+        await self.put_kv_data(f"{uid}_verify_info", verify_info)
+        await self.put_kv_data(f"{uid}_verify_status", "pending")
+        
+        logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
+        
+        await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True)
+
+    async def _start_verification_process(self, event: AstrMessageEvent, uid: str, gid: int, question: str, answer: int, is_new_member: bool):
+        """为用户启动或重启验证流程"""
+        if uid in self.pending:
+            old_task = self.pending[uid].get("task")
+            if old_task and not old_task.done():
+                old_task.cancel()
+
+        task = asyncio.create_task(self._timeout_kick(uid, gid))
+        
+        # 如果是新成员，重置错误计数；否则保留现有错误计数
+        if is_new_member:
+            self.pending[uid] = {"gid": gid, "answer": answer, "task": task, "wrong_count": 0}
+        else:
+            wrong_count = self.pending.get(uid, {}).get("wrong_count", 0)
+            self.pending[uid] = {"gid": gid, "answer": answer, "task": task, "wrong_count": wrong_count}
+
+        at_user = f"[CQ:at,qq={uid}]"
+        timeout_minutes = self.verification_timeout // 60
+        
+        if is_new_member:
+            prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内 @我 并回答下面的问题以完成验证：\n{question}"
+        else:
+            prompt_message = f"{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}"
+
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
+
+    async def _process_verification_message(self, event: AstrMessageEvent):
+        """处理群消息以进行验证"""
+        uid = str(event.get_sender_id())
+        if uid not in self.pending:
+            return
+        
+        text = event.message_str.strip()
+        raw = event.message_obj.raw_message
+        gid = self.pending[uid]["gid"]
+        
+        current_gid = raw.get("group_id")
+        if current_gid and str(current_gid) != str(gid):
+            return
+        
+        try:
+            match = re.search(r'(\d+)', text)
+            if not match:
+                return
+            user_answer = int(match.group(1))
+        except (ValueError, TypeError):
+            return
+
+        correct_answer = self.pending[uid].get("answer")
+
+        if user_answer == correct_answer:
+            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
+            self.pending[uid]["task"].cancel()
+            self.pending.pop(uid, None)
+
+            # 更新验证状态
+            await self.put_kv_data(f"{uid}_verify_status", "verified")
+            await self.put_kv_data(f"{uid}_verified", True)
+            await self.put_kv_data(f"{uid}_verify_time", asyncio.get_event_loop().time())
+
+            nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
+            welcome_msg = f"[CQ:at,qq={uid}] 验证成功，欢迎你的加入！"
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=welcome_msg)
+            event.stop_event()
+        else:
+            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 回答错误，重新生成问题")
+            
+            # 增加错误计数
+            self.pending[uid]["wrong_count"] += 1
+            wrong_count = self.pending[uid]["wrong_count"]
+            
+            # 检查是否超过最大错误次数
+            if wrong_count >= self.max_wrong_answers:
+                logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
+                
+                # 取消超时任务
+                self.pending[uid]["task"].cancel()
+                self.pending.pop(uid, None)
+                
+                # 发送踢出消息
+                at_user = f"[CQ:at,qq={uid}]"
+                kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+                
+                # 踢出用户
+                await asyncio.sleep(2)
+                await event.bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
+                
+                # 发送踢出完成消息
+                final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=final_msg)
+                
+                event.stop_event()
+                return
+            
+            # 更新验证信息
+            question, answer = self._generate_math_problem()
+            verify_info = await self.get_kv_data(f"{uid}_verify_info", {})
+            verify_info["question"] = question
+            verify_info["answer"] = answer
+            await self.put_kv_data(f"{uid}_verify_info", verify_info)
+            
+            await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False)
+            event.stop_event()
+
+    async def _process_member_decrease(self, event: AstrMessageEvent):
+        """处理成员离开"""
+        uid = str(event.message_obj.raw_message.get("user_id"))
+        if uid in self.pending:
+            self.pending[uid]["task"].cancel()
+            self.pending.pop(uid, None)
+            logger.info(f"[Geetest Verify] 待验证用户 {uid} 已离开，清理其验证状态")
+        
+        await self.put_kv_data(f"{uid}_verified", False)
+        await self.put_kv_data(f"{uid}_verify_status", "pending")
+        logger.info(f"[Geetest Verify] 用户 {uid} 已离开，清除验证状态")
+
+    async def _timeout_kick(self, uid: str, gid: int):
+        """处理超时踢出的协程"""
+        try:
+            if self.verification_timeout > 120:
+                await asyncio.sleep(self.verification_timeout - 60)
+
+                if uid in self.pending:
+                    bot = self.context.get_platform("aiocqhttp").get_client()
+                    at_user = f"[CQ:at,qq={uid}]"
+                    reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！"
+                    await bot.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
+                    logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送提醒")
+
+            await asyncio.sleep(60)
+
+            if uid not in self.pending:
+                return
+
+            bot = self.context.get_platform("aiocqhttp").get_client()
+            at_user = f"[CQ:at,qq={uid}]"
+            
+            failure_msg = f"{at_user} 验证超时，你将在 5 秒后被请出本群。"
+            await bot.api.call_action("send_group_msg", group_id=gid, message=failure_msg)
+            
+            await asyncio.sleep(5)
+
+            if uid not in self.pending:
+                return
+            
+            await bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
+            logger.info(f"[Geetest Verify] 用户 {uid} 验证超时，已从群 {gid} 踢出")
+            
+            kick_msg = f"{at_user} 因未在规定时间内完成验证，已被请出本群。"
+            await bot.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+
+        except asyncio.CancelledError:
+            logger.info(f"[Geetest Verify] 踢出任务已取消 (用户 {uid})")
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 踢出流程发生错误 (用户 {uid}): {e}")
+
+    @filter.command("重新验证")
+    async def reverify_command(self, event: AstrMessageEvent):
+        """强制指定用户重新验证"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查群是否开启了验证
+        enabled = await self.get_kv_data(f"group_{gid}_enabled", False)
+        if not enabled:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 当前群未开启验证哦~")
+            return
+        
+        # 检查是否有权限（这里简单判断是否@了其他用户）
+        message = raw.get("message", [])
+        target_uid = None
+        
+        for seg in message:
+            if seg.get("type") == "at":
+                target_uid = str(seg.get("data", {}).get("qq"))
+                break
+        
+        # 如果没有@用户，检查是否是"从未发言的人"
+        text = event.message_str.replace("/重新验证", "").strip()
+        if not target_uid and text == "从未发言的人":
+            await self._reverify_never_speak(event, gid, uid)
+            return
+        
+        if not target_uid:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 请@需要重新验证的用户")
+            return
+        
+        # 清除用户的验证状态
+        await self.put_kv_data(f"{target_uid}_verify_status", "pending")
+        await self.put_kv_data(f"{target_uid}_verified", False)
+        await self.put_kv_data(f"{target_uid}_bypassed", False)
+        
+        # 如果用户正在验证中，取消之前的任务
+        if target_uid in self.pending:
+            old_task = self.pending[target_uid].get("task")
+            if old_task and not old_task.done():
+                old_task.cancel()
+            self.pending.pop(target_uid, None)
+        
+        # 生成新的验证问题
+        question, answer = self._generate_math_problem()
+        verify_info = {
+            "gid": gid,
+            "join_time": asyncio.get_event_loop().time(),
+            "question": question,
+            "answer": answer
+        }
+        await self.put_kv_data(f"{target_uid}_verify_info", verify_info)
+        
+        logger.info(f"[Geetest Verify] 用户 {target_uid} 被强制重新验证，生成问题: {question} (答案: {answer})")
+        
+        # 启动验证流程
+        await self._start_verification_process(event, target_uid, gid, question, answer, is_new_member=True)
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已要求 [CQ:at,qq={target_uid}] 重新验证")
+
+    async def _reverify_never_speak(self, event: AstrMessageEvent, gid: int, operator_uid: str):
+        """为从未发言的人重新验证"""
+        try:
+            # 获取群成员列表
+            member_list = await event.bot.api.call_action("get_group_member_list", group_id=gid)
+            
+            count = 0
+            for member in member_list:
+                member_uid = str(member.get("user_id"))
+                
+                # 跳过机器人自己
+                if member_uid == str(event.get_self_id()):
+                    continue
+                
+                # 跳过管理员和群主
+                if member.get("role") in ["admin", "owner"]:
+                    continue
+                
+                # 检查用户是否已验证过
+                verified = await self.get_kv_data(f"{member_uid}_verified", False)
+                if verified:
+                    continue
+                
+                # 检查用户是否已被标记为绕过验证
+                bypassed = await self.get_kv_data(f"{member_uid}_bypassed", False)
+                if bypassed:
+                    continue
+                
+                # 为该用户启动验证
+                question, answer = self._generate_math_problem()
+                verify_info = {
+                    "gid": gid,
+                    "join_time": asyncio.get_event_loop().time(),
+                    "question": question,
+                    "answer": answer
+                }
+                await self.put_kv_data(f"{member_uid}_verify_info", verify_info)
+                await self.put_kv_data(f"{member_uid}_verify_status", "pending")
+                
+                # 如果用户正在验证中，取消之前的任务
+                if member_uid in self.pending:
+                    old_task = self.pending[member_uid].get("task")
+                    if old_task and not old_task.done():
+                        old_task.cancel()
+                
+                # 启动验证流程
+                await self._start_verification_process(event, member_uid, gid, question, answer, is_new_member=True)
+                
+                count += 1
+                logger.info(f"[Geetest Verify] 为从未发言的用户 {member_uid} 启动验证")
+                
+                # 等待2秒再处理下一个
+                await asyncio.sleep(2)
+            
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={operator_uid}] 已为 {count} 位从未发言的用户启动验证")
+            
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 获取群成员列表失败: {e}")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={operator_uid}] 获取群成员列表失败")
+
+    @filter.command("绕过验证")
+    async def bypass_command(self, event: AstrMessageEvent):
+        """让指定用户绕过验证"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查群是否开启了验证
+        enabled = await self.get_kv_data(f"group_{gid}_enabled", False)
+        if not enabled:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 当前群未开启验证哦~")
+            return
+        
+        # 检查是否有权限（这里简单判断是否@了其他用户）
+        message = raw.get("message", [])
+        target_uid = None
+        
+        for seg in message:
+            if seg.get("type") == "at":
+                target_uid = str(seg.get("data", {}).get("qq"))
+                break
+        
+        if not target_uid:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 请@需要绕过验证的用户")
+            return
+        
+        # 标记用户为绕过验证
+        await self.put_kv_data(f"{target_uid}_bypassed", True)
+        await self.put_kv_data(f"{target_uid}_verify_status", "bypassed")
+        
+        # 如果用户正在验证中，取消任务
+        if target_uid in self.pending:
+            old_task = self.pending[target_uid].get("task")
+            if old_task and not old_task.done():
+                old_task.cancel()
+            self.pending.pop(target_uid, None)
+        
+        logger.info(f"[Geetest Verify] 用户 {target_uid} 已标记为绕过验证")
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已允许 [CQ:at,qq={target_uid}] 绕过验证")
+
+    @filter.command("开启验证")
+    async def enable_verify_command(self, event: AstrMessageEvent):
+        """开启群验证"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查是否已在配置列表中
+        if gid in self.enabled_groups:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 本群验证已处于开启状态")
+            return
+        
+        # 添加到启用列表
+        self.enabled_groups.append(gid)
+        
+        # 更新配置文件
+        try:
+            self.config.set("enabled_groups", self.enabled_groups)
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        
+        # 同时更新 KV 数据库（兼容旧版本）
+        await self.put_kv_data(f"group_{gid}_enabled", True)
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已开启本群验证")
+        logger.info(f"[Geetest Verify] 群 {gid} 已开启验证")
+
+    @filter.command("关闭验证")
+    async def disable_verify_command(self, event: AstrMessageEvent):
+        """关闭群验证"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查是否在配置列表中
+        if self.enabled_groups and gid not in self.enabled_groups:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 本群暂未开启验证")
+            return
+        
+        # 从启用列表中移除
+        if gid in self.enabled_groups:
+            self.enabled_groups.remove(gid)
+            
+            # 更新配置文件
+            try:
+                self.config.set("enabled_groups", self.enabled_groups)
+            except Exception as e:
+                logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        
+        # 同时更新 KV 数据库（兼容旧版本）
+        await self.put_kv_data(f"group_{gid}_enabled", False)
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已关闭本群验证")
+        logger.info(f"[Geetest Verify] 群 {gid} 已关闭验证")
+
+    @filter.command("设置验证超时时间")
+    async def set_timeout_command(self, event: AstrMessageEvent):
+        """设置验证超时时间"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 从消息中提取数字
+        text = event.message_str
+        match = re.search(r'(\d+)', text)
+        if not match:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 请输入正确的时间（秒）")
+            return
+        
+        timeout = int(match.group(1))
+        self.verification_timeout = timeout
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已将验证超时时间设置为 {timeout} 秒")
+        
+        if timeout < 60:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 建议至少一分钟(60秒)哦ε(*´･ω･)з")
+        
+        logger.info(f"[Geetest Verify] 群 {gid} 验证超时时间设置为 {timeout} 秒")

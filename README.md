@@ -4,6 +4,11 @@
 <p align="center">
   <img src="logo.png" alt="Group-Geetest-Verify Logo">
 </p>
+# 效果展示
+
+<p align="center">
+  <img src="img/1.jpg" width="300">
+</p>
 
 # 前置条件
 1. 一台有公网IP的服务器

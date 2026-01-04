@@ -50,6 +50,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_geetest_verify = self.config.get("enable_geetest_verify", schema_defaults.get("enable_geetest_verify", False))
             self.enable_level_verify = self.config.get("enable_level_verify", schema_defaults.get("enable_level_verify", False))
             self.min_qq_level = self.config.get("min_qq_level", schema_defaults.get("min_qq_level", 20))
+            self.verify_delay = self.config.get("verify_delay", schema_defaults.get("verify_delay", 0))
         except Exception:
             self.enabled_groups = schema_defaults.get("enabled_groups", [])
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
@@ -59,6 +60,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_geetest_verify = schema_defaults.get("enable_geetest_verify", False)
             self.enable_level_verify = schema_defaults.get("enable_level_verify", False)
             self.min_qq_level = schema_defaults.get("min_qq_level", 20)
+            self.verify_delay = schema_defaults.get("verify_delay", 3)
 
     def _save_config(self):
         """保存配置到磁盘"""
@@ -72,6 +74,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.config["enable_geetest_verify"] = self.enable_geetest_verify
             self.config["enable_level_verify"] = self.enable_level_verify
             self.config["min_qq_level"] = self.min_qq_level
+            self.config["verify_delay"] = self.verify_delay
             
             logger.info("[Geetest Verify] 配置已更新到内存")
         except Exception as e:
@@ -242,6 +245,11 @@ class GroupGeetestVerifyPlugin(Star):
         await self.put_kv_data(f"{gid}:{uid}_verify_status", "pending")
         
         logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
+        
+        # 延时发送验证消息
+        if self.verify_delay > 0:
+            logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {self.verify_delay} 秒后发送验证消息")
+            await asyncio.sleep(self.verify_delay)
         
         await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True)
 

@@ -26,6 +26,9 @@ class GroupGeetestVerifyPlugin(Star):
         # 待处理的验证: { "user_id": {"gid": group_id, "answer": correct_answer, "task": asyncio.Task, "wrong_count": 0} }
         self.pending: Dict[str, Dict[str, Any]] = {}
         
+        # 创建全局 aiohttp ClientSession
+        self.session = aiohttp.ClientSession()
+        
         # 从配置文件 schema 读取默认值
         schema_path = os.path.join(os.path.dirname(__file__), "_conf_schema.json")
         schema_defaults = {}
@@ -57,6 +60,29 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_level_verify = schema_defaults.get("enable_level_verify", False)
             self.min_qq_level = schema_defaults.get("min_qq_level", 20)
 
+    def _save_config(self):
+        """保存配置到磁盘"""
+        try:
+            # 更新配置字典
+            self.config["enabled_groups"] = self.enabled_groups
+            self.config["verification_timeout"] = self.verification_timeout
+            self.config["max_wrong_answers"] = self.max_wrong_answers
+            self.config["api_base_url"] = self.api_base_url
+            self.config["api_key"] = self.api_key
+            self.config["enable_geetest_verify"] = self.enable_geetest_verify
+            self.config["enable_level_verify"] = self.enable_level_verify
+            self.config["min_qq_level"] = self.min_qq_level
+            
+            logger.info("[Geetest Verify] 配置已更新到内存")
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 更新配置失败: {e}")
+
+    async def cleanup(self):
+        """清理资源，关闭 aiohttp session"""
+        if hasattr(self, 'session') and not self.session.closed:
+            await self.session.close()
+            logger.info("[Geetest Verify] 已关闭 aiohttp ClientSession")
+
     async def _create_geetest_verify(self, gid: int, uid: str) -> str:
         """调用极验 API 生成验证链接"""
         if not self.api_key:
@@ -75,20 +101,19 @@ class GroupGeetestVerifyPlugin(Star):
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=data, headers=headers) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        if result.get("code") == 0:
-                            verify_url = result.get("data", {}).get("url")
-                            logger.info(f"[Geetest Verify] 成功生成验证链接: {verify_url}")
-                            return verify_url
-                        else:
-                            logger.error(f"[Geetest Verify] API 返回错误: {result.get('msg')}")
-                            return None
+            async with self.session.post(url, json=data, headers=headers) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get("code") == 0:
+                        verify_url = result.get("data", {}).get("url")
+                        logger.info(f"[Geetest Verify] 成功生成验证链接: {verify_url}")
+                        return verify_url
                     else:
-                        logger.error(f"[Geetest Verify] API 请求失败，状态码: {response.status}")
+                        logger.error(f"[Geetest Verify] API 返回错误: {result.get('msg')}")
                         return None
+                else:
+                    logger.error(f"[Geetest Verify] API 请求失败，状态码: {response.status}")
+                    return None
         except aiohttp.ClientError as e:
             logger.error(f"[Geetest Verify] API 请求异常: {e}")
             return None
@@ -114,19 +139,18 @@ class GroupGeetestVerifyPlugin(Star):
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=data, headers=headers) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        if result.get("code") == 0 and result.get("passed"):
-                            logger.info("[Geetest Verify] 验证码验证成功")
-                            return True
-                        else:
-                            logger.info(f"[Geetest Verify] 验证码验证失败: {result.get('msg')}")
-                            return False
+            async with self.session.post(url, json=data, headers=headers) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get("code") == 0 and result.get("passed"):
+                        logger.info("[Geetest Verify] 验证码验证成功")
+                        return True
                     else:
-                        logger.error(f"[Geetest Verify] API 请求失败，状态码: {response.status}")
+                        logger.info(f"[Geetest Verify] 验证码验证失败: {result.get('msg')}")
                         return False
+                else:
+                    logger.error(f"[Geetest Verify] API 请求失败，状态码: {response.status}")
+                    return False
         except aiohttp.ClientError as e:
             logger.error(f"[Geetest Verify] API 请求异常: {e}")
             return False
@@ -671,11 +695,8 @@ class GroupGeetestVerifyPlugin(Star):
         # 添加到启用列表
         self.enabled_groups.append(gid)
         
-        # 更新配置文件
-        try:
-            self.config["enabled_groups"] = self.enabled_groups
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        # 保存配置
+        self._save_config()
         
         # 同时更新 KV 数据库（兼容旧版本）
         await self.put_kv_data(f"group_{gid}_enabled", True)
@@ -704,11 +725,8 @@ class GroupGeetestVerifyPlugin(Star):
         if gid in self.enabled_groups:
             self.enabled_groups.remove(gid)
             
-            # 更新配置文件
-            try:
-                self.config["enabled_groups"] = self.enabled_groups
-            except Exception as e:
-                logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+            # 保存配置
+            self._save_config()
         
         # 同时更新 KV 数据库（兼容旧版本）
         await self.put_kv_data(f"group_{gid}_enabled", False)
@@ -738,6 +756,9 @@ class GroupGeetestVerifyPlugin(Star):
         timeout = int(match.group(1))
         self.verification_timeout = timeout
         
+        # 保存配置
+        self._save_config()
+        
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已将验证超时时间设置为 {timeout} 秒")
         
         if timeout < 60:
@@ -765,11 +786,8 @@ class GroupGeetestVerifyPlugin(Star):
         # 开启等级验证
         self.enable_level_verify = True
         
-        # 更新配置文件
-        try:
-            self.config["enable_level_verify"] = True
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        # 保存配置
+        self._save_config()
         
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已开启等级验证，QQ等级大于等于 {self.min_qq_level} 级的用户将自动跳过验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已开启等级验证")
@@ -794,11 +812,8 @@ class GroupGeetestVerifyPlugin(Star):
         # 关闭等级验证
         self.enable_level_verify = False
         
-        # 更新配置文件
-        try:
-            self.config["enable_level_verify"] = False
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        # 保存配置
+        self._save_config()
         
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已关闭等级验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已关闭等级验证")
@@ -831,11 +846,8 @@ class GroupGeetestVerifyPlugin(Star):
         
         self.min_qq_level = min_level
         
-        # 更新配置文件
-        try:
-            self.config["min_qq_level"] = min_level
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
+        # 保存配置
+        self._save_config()
         
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 已将最低验证等级设置为 {min_level} 级")
         logger.info(f"[Geetest Verify] 群 {gid} 最低验证等级设置为 {min_level} 级")

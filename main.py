@@ -403,6 +403,16 @@ class GroupGeetestVerifyPlugin(Star):
         await self.put_kv_data(f"{uid}_verify_status", "pending")
         logger.info(f"[Geetest Verify] 用户 {uid} 已离开，清除验证状态")
 
+    async def _check_user_permission(self, event: AstrMessageEvent, uid: str, gid: int) -> bool:
+        """检查用户是否是群主或管理员"""
+        try:
+            member_info = await event.bot.api.call_action("get_group_member_info", group_id=gid, user_id=int(uid))
+            role = member_info.get("role", "")
+            return role in ["owner", "admin"]
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 检查用户权限失败: {e}")
+            return False
+
     async def _timeout_kick(self, uid: str, gid: int):
         """处理超时踢出的协程"""
         try:
@@ -449,6 +459,11 @@ class GroupGeetestVerifyPlugin(Star):
         raw = event.message_obj.raw_message
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
         
         # 检查群是否开启了验证
         enabled = await self.get_kv_data(f"group_{gid}_enabled", False)
@@ -571,6 +586,11 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
+        
         # 检查群是否开启了验证
         enabled = await self.get_kv_data(f"group_{gid}_enabled", False)
         if not enabled:
@@ -612,6 +632,11 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
+        
         # 检查是否已在配置列表中
         if gid in self.enabled_groups:
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 本群验证已处于开启状态")
@@ -638,6 +663,11 @@ class GroupGeetestVerifyPlugin(Star):
         raw = event.message_obj.raw_message
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
         
         # 检查是否在配置列表中
         if self.enabled_groups and gid not in self.enabled_groups:
@@ -666,6 +696,11 @@ class GroupGeetestVerifyPlugin(Star):
         raw = event.message_obj.raw_message
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            return
         
         # 从消息中提取数字
         text = event.message_str

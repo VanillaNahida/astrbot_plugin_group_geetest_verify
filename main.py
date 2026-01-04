@@ -673,7 +673,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 更新配置文件
         try:
-            self.config.set("enabled_groups", self.enabled_groups)
+            self.config["enabled_groups"] = self.enabled_groups
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
         
@@ -706,7 +706,7 @@ class GroupGeetestVerifyPlugin(Star):
             
             # 更新配置文件
             try:
-                self.config.set("enabled_groups", self.enabled_groups)
+                self.config["enabled_groups"] = self.enabled_groups
             except Exception as e:
                 logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
         
@@ -767,7 +767,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 更新配置文件
         try:
-            self.config.set("enable_level_verify", True)
+            self.config["enable_level_verify"] = True
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
         
@@ -796,7 +796,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 更新配置文件
         try:
-            self.config.set("enable_level_verify", False)
+            self.config["enable_level_verify"] = False
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
         
@@ -833,7 +833,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 更新配置文件
         try:
-            self.config.set("min_qq_level", min_level)
+            self.config["min_qq_level"] = min_level
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置文件失败: {e}")
         

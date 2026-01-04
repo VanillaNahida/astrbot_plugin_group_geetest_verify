@@ -1,8 +1,6 @@
 # Group-Geetest-Verify
 入群验证码插件，使用极验Geetest V4验证，有效防止机器人入群。
 
-<div align="center">
-
 ![Group-Geetest-Verify](https://socialify.git.ci/VanillaNahida/astrbot_plugin_group_geetest_verify/image?description=1&font=KoHo&forks=1&issues=1&language=1&name=1&owner=1&pattern=Circuit%20Board&pulls=1&stargazers=1&theme=Auto)
 
 <p align="center">

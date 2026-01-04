@@ -1,7 +1,10 @@
 import asyncio
+import json
+import os
 import random
 import re
 from typing import Dict, Any, Tuple
+import aiohttp
 
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
@@ -15,26 +18,117 @@ from astrbot.api.star import Context, Star, register
     "1.0.0"
 )
 class GroupGeetestVerifyPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.context = context
+        self.config = config or {}
         
         # 待处理的验证: { "user_id": {"gid": group_id, "answer": correct_answer, "task": asyncio.Task, "wrong_count": 0} }
         self.pending: Dict[str, Dict[str, Any]] = {}
         
-        # 验证超时时间（秒）
-        self.verification_timeout = 300
-        
-        # 最大错误回答次数
-        self.max_wrong_answers = 5
-        
-        # 从配置文件读取启用的群列表
+        # 从配置文件 schema 读取默认值
+        schema_path = os.path.join(os.path.dirname(__file__), "_conf_schema.json")
+        schema_defaults = {}
         try:
-            self.enabled_groups = self.config.get("enabled_groups", [])
-            self.verification_timeout = self.config.get("verification_timeout", 300)
-            self.max_wrong_answers = self.config.get("max_wrong_answers", 5)
+            with open(schema_path, 'r', encoding='utf-8') as f:
+                schema = json.load(f)
+                for key, value in schema.items():
+                    schema_defaults[key] = value.get("default")
+        except Exception as e:
+            logger.warning(f"[Geetest Verify] 读取配置 schema 失败: {e}")
+        
+        # 从配置文件读取配置，如果不存在则使用 schema 中的默认值
+        try:
+            self.enabled_groups = self.config.get("enabled_groups", schema_defaults.get("enabled_groups", []))
+            self.verification_timeout = self.config.get("verification_timeout", schema_defaults.get("verification_timeout", 300))
+            self.max_wrong_answers = self.config.get("max_wrong_answers", schema_defaults.get("max_wrong_answers", 5))
+            self.api_base_url = self.config.get("api_base_url", schema_defaults.get("api_base_url", "http://localhost:8000"))
+            self.api_key = self.config.get("api_key", schema_defaults.get("api_key", ""))
+            self.enable_geetest_verify = self.config.get("enable_geetest_verify", schema_defaults.get("enable_geetest_verify", False))
         except:
-            self.enabled_groups = []
+            self.enabled_groups = schema_defaults.get("enabled_groups", [])
+            self.verification_timeout = schema_defaults.get("verification_timeout", 300)
+            self.max_wrong_answers = schema_defaults.get("max_wrong_answers", 5)
+            self.api_base_url = schema_defaults.get("api_base_url", "http://localhost:8000")
+            self.api_key = schema_defaults.get("api_key", "")
+            self.enable_geetest_verify = schema_defaults.get("enable_geetest_verify", False)
+
+    async def _create_geetest_verify(self, gid: int, uid: str) -> str:
+        """调用极验 API 生成验证链接"""
+        if not self.api_key:
+            logger.error("[Geetest Verify] API 密钥未配置")
+            return None
+        
+        url = f"{self.api_base_url}/verify/create"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": f"AstrBot/v4.7.0"
+        }
+        data = {
+            "group_id": str(gid),
+            "user_id": uid
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get("code") == 0:
+                            verify_url = result.get("data", {}).get("url")
+                            logger.info(f"[Geetest Verify] 成功生成验证链接: {verify_url}")
+                            return verify_url
+                        else:
+                            logger.error(f"[Geetest Verify] API 返回错误: {result.get('msg')}")
+                            return None
+                    else:
+                        logger.error(f"[Geetest Verify] API 请求失败，状态码: {response.status}")
+                        return None
+        except aiohttp.ClientError as e:
+            logger.error(f"[Geetest Verify] API 请求异常: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 生成验证链接异常: {e}")
+            return None
+
+    async def _check_geetest_verify(self, gid: int, uid: str, code: str) -> bool:
+        """调用极验 API 验证验证码"""
+        if not self.api_key:
+            logger.error("[Geetest Verify] API 密钥未配置")
+            return False
+        
+        url = f"{self.api_base_url}/verify/check"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "group_id": str(gid),
+            "user_id": uid,
+            "code": code
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get("code") == 0 and result.get("passed"):
+                            logger.info(f"[Geetest Verify] 验证码验证成功")
+                            return True
+                        else:
+                            logger.info(f"[Geetest Verify] 验证码验证失败: {result.get('msg')}")
+                            return False
+                    else:
+                        logger.error(f"[Geetest Verify] API 请求失败，状态码: {response.status}")
+                        return False
+        except aiohttp.ClientError as e:
+            logger.error(f"[Geetest Verify] API 请求异常: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 验证验证码异常: {e}")
+            return False
 
     def _generate_math_problem(self) -> Tuple[str, int]:
         """生成一个100以内的加减法问题"""
@@ -124,14 +218,32 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 如果是新成员，重置错误计数；否则保留现有错误计数
         if is_new_member:
-            self.pending[uid] = {"gid": gid, "answer": answer, "task": task, "wrong_count": 0}
+            self.pending[uid] = {"gid": gid, "answer": answer, "task": task, "wrong_count": 0, "verify_method": "geetest"}
         else:
             wrong_count = self.pending.get(uid, {}).get("wrong_count", 0)
-            self.pending[uid] = {"gid": gid, "answer": answer, "task": task, "wrong_count": wrong_count}
+            verify_method = self.pending.get(uid, {}).get("verify_method", "geetest")
+            self.pending[uid] = {"gid": gid, "answer": answer, "task": task, "wrong_count": wrong_count, "verify_method": verify_method}
 
         at_user = f"[CQ:at,qq={uid}]"
         timeout_minutes = self.verification_timeout // 60
         
+        # 优先尝试使用极验验证
+        if self.enable_geetest_verify and self.api_key:
+            try:
+                verify_url = await self._create_geetest_verify(gid, uid)
+                if verify_url:
+                    self.pending[uid]["verify_method"] = "geetest"
+                    if is_new_member:
+                        prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                    else:
+                        prompt_message = f"{at_user} 请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
+                    return
+            except Exception as e:
+                logger.warning(f"[Geetest Verify] 调用极验 API 失败: {e}，回退到算术验证")
+        
+        # 回退到算术验证
+        self.pending[uid]["verify_method"] = "math"
         if is_new_member:
             prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内 @我 并回答下面的问题以完成验证：\n{question}"
         else:
@@ -153,70 +265,131 @@ class GroupGeetestVerifyPlugin(Star):
         if current_gid and str(current_gid) != str(gid):
             return
         
-        try:
-            match = re.search(r'(\d+)', text)
+        # 如果启用了极验验证，使用 API 验证验证码
+        if self.enable_geetest_verify:
+            # 提取验证码（6位数字+字母）
+            match = re.search(r'([A-Za-z0-9]{6})', text)
             if not match:
                 return
-            user_answer = int(match.group(1))
-        except (ValueError, TypeError):
-            return
-
-        correct_answer = self.pending[uid].get("answer")
-
-        if user_answer == correct_answer:
-            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
-            self.pending[uid]["task"].cancel()
-            self.pending.pop(uid, None)
-
-            # 更新验证状态
-            await self.put_kv_data(f"{uid}_verify_status", "verified")
-            await self.put_kv_data(f"{uid}_verified", True)
-            await self.put_kv_data(f"{uid}_verify_time", asyncio.get_event_loop().time())
-
-            nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
-            welcome_msg = f"[CQ:at,qq={uid}] 验证成功，欢迎你的加入！"
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=welcome_msg)
-            event.stop_event()
-        else:
-            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 回答错误，重新生成问题")
+            user_code = match.group(1)
             
-            # 增加错误计数
-            self.pending[uid]["wrong_count"] += 1
-            wrong_count = self.pending[uid]["wrong_count"]
+            # 调用 API 验证验证码
+            is_valid = await self._check_geetest_verify(gid, uid, user_code)
             
-            # 检查是否超过最大错误次数
-            if wrong_count >= self.max_wrong_answers:
-                logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
-                
-                # 取消超时任务
+            if is_valid:
+                logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
                 self.pending[uid]["task"].cancel()
                 self.pending.pop(uid, None)
-                
-                # 发送踢出消息
-                at_user = f"[CQ:at,qq={uid}]"
-                kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
-                
-                # 踢出用户
-                await asyncio.sleep(2)
-                await event.bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
-                
-                # 发送踢出完成消息
-                final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=final_msg)
-                
+
+                # 更新验证状态
+                await self.put_kv_data(f"{uid}_verify_status", "verified")
+                await self.put_kv_data(f"{uid}_verified", True)
+                await self.put_kv_data(f"{uid}_verify_time", asyncio.get_event_loop().time())
+
+                nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
+                welcome_msg = f"[CQ:at,qq={uid}] 验证成功，欢迎你的加入！"
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=welcome_msg)
                 event.stop_event()
+            else:
+                logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证码错误，重新生成验证链接")
+                
+                # 增加错误计数
+                self.pending[uid]["wrong_count"] += 1
+                wrong_count = self.pending[uid]["wrong_count"]
+                
+                # 检查是否超过最大错误次数
+                if wrong_count >= self.max_wrong_answers:
+                    logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
+                    
+                    # 取消超时任务
+                    self.pending[uid]["task"].cancel()
+                    self.pending.pop(uid, None)
+                    
+                    # 发送踢出消息
+                    at_user = f"[CQ:at,qq={uid}]"
+                    kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
+                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+                    
+                    # 踢出用户
+                    await asyncio.sleep(2)
+                    await event.bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
+                    
+                    # 发送踢出完成消息
+                    final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
+                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=final_msg)
+                    
+                    event.stop_event()
+                    return
+                
+                # 重新生成验证链接
+                await self._start_verification_process(event, uid, gid, "", 0, is_new_member=False)
+                event.stop_event()
+        else:
+            # 使用本地数学题验证
+            try:
+                match = re.search(r'(\d+)', text)
+                if not match:
+                    return
+                user_answer = int(match.group(1))
+            except (ValueError, TypeError):
                 return
-            
-            # 更新验证信息
-            question, answer = self._generate_math_problem()
-            verify_info = await self.get_kv_data(f"{uid}_verify_info", {})
-            verify_info["question"] = question
-            verify_info["answer"] = answer
-            await self.put_kv_data(f"{uid}_verify_info", verify_info)
-            
-            await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False)
-            event.stop_event()
+
+            correct_answer = self.pending[uid].get("answer")
+
+            if user_answer == correct_answer:
+                logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
+                self.pending[uid]["task"].cancel()
+                self.pending.pop(uid, None)
+
+                # 更新验证状态
+                await self.put_kv_data(f"{uid}_verify_status", "verified")
+                await self.put_kv_data(f"{uid}_verified", True)
+                await self.put_kv_data(f"{uid}_verify_time", asyncio.get_event_loop().time())
+
+                nickname = raw.get("sender", {}).get("card", "") or raw.get("sender", {}).get("nickname", uid)
+                welcome_msg = f"[CQ:at,qq={uid}] 验证成功，欢迎你的加入！"
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=welcome_msg)
+                event.stop_event()
+            else:
+                logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 回答错误，重新生成问题")
+                
+                # 增加错误计数
+                self.pending[uid]["wrong_count"] += 1
+                wrong_count = self.pending[uid]["wrong_count"]
+                
+                # 检查是否超过最大错误次数
+                if wrong_count >= self.max_wrong_answers:
+                    logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
+                    
+                    # 取消超时任务
+                    self.pending[uid]["task"].cancel()
+                    self.pending.pop(uid, None)
+                    
+                    # 发送踢出消息
+                    at_user = f"[CQ:at,qq={uid}]"
+                    kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
+                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+                    
+                    # 踢出用户
+                    await asyncio.sleep(2)
+                    await event.bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
+                    
+                    # 发送踢出完成消息
+                    final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
+                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=final_msg)
+                    
+                    event.stop_event()
+                    return
+                
+                # 更新验证信息
+                question, answer = self._generate_math_problem()
+                verify_info = await self.get_kv_data(f"{uid}_verify_info", {})
+                verify_info["question"] = question
+                verify_info["answer"] = answer
+                await self.put_kv_data(f"{uid}_verify_info", verify_info)
+                
+                await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False)
+                event.stop_event()
 
     async def _process_member_decrease(self, event: AstrMessageEvent):
         """处理成员离开"""

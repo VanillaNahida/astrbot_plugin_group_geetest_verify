@@ -58,5 +58,23 @@
     "type": "string",
     "default": "{at_user} 你已连续回答错误 {count} 次，将被请出本群。",
     "hint": "用户回答错误次数过多时发送的消息。可用变量: {at_user}, {count} (错误次数)。"
+  },
+  "api_base_url": {
+    "description": "极验验证 API 基础地址",
+    "type": "string",
+    "default": "http://localhost:8000",
+    "hint": "极验验证后端服务的 API 基础地址，例如 http://localhost:8000"
+  },
+  "api_key": {
+    "description": "API 访问密钥",
+    "type": "string",
+    "default": "",
+    "hint": "极验验证后端服务的 API 访问密钥，用于保护 API 接口"
+  },
+  "enable_geetest_verify": {
+    "description": "启用极验验证",
+    "type": "bool",
+    "default": false,
+    "hint": "是否启用极验验证。如果启用，将使用极验验证后端服务进行验证；如果禁用，将使用本地数学题验证。"
   }
 }

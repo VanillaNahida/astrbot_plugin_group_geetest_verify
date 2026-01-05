@@ -75,8 +75,9 @@ class GroupGeetestVerifyPlugin(Star):
             self.config["enable_level_verify"] = self.enable_level_verify
             self.config["min_qq_level"] = self.min_qq_level
             self.config["verify_delay"] = self.verify_delay
-            
-            logger.info("[Geetest Verify] 配置已更新到内存")
+            # 保存到磁盘
+            self.config.save_config()
+            logger.info("[Geetest Verify] 配置已保存到文件")
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置失败: {e}")
 
@@ -218,7 +219,9 @@ class GroupGeetestVerifyPlugin(Star):
         if state_key in self.verify_states and self.verify_states[state_key].get("status") == "verified":
             logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已验证过，跳过验证流程")
             return
-        
+
+        # 延时2秒
+        await asyncio.sleep(2)
         # 检查是否启用了等级验证
         at_user = f"[CQ:at,qq={uid}]"
         skip_verify = False

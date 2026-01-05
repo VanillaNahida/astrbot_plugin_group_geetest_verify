@@ -30,7 +30,7 @@
 3. 安装了PHP 8.4的服务器，可使用[宝塔面板](https://www.bt.cn/)按照文档安装
 
 # 部署后端
-请查看[安装步骤](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)
+请查看[安装步骤](https://github.com/VanillaNahida/group-verify-service#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)
 
 # 使用方法
 1. 在插件市场搜索插件 `astrbot_plugin_group_geetest_verify` 或 `入群网页验证插件`

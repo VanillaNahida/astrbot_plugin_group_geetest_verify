@@ -303,7 +303,7 @@ class GroupGeetestVerifyPlugin(Star):
                     else:
                         wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
                         remaining_attempts = self.max_wrong_answers - wrong_count
-                        prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。\n剩余尝试次数：{remaining_attempts}"
+                        prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}"
                     await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
                     return
             except Exception as e:
@@ -312,7 +312,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 回退到算术验证
         self.verify_states[state_key]["verify_method"] = "math"
         if is_new_member:
-            prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内回答下面的问题以完成验证：\n{question}"
+            prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。"
         else:
             wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
             remaining_attempts = self.max_wrong_answers - wrong_count
@@ -335,8 +335,10 @@ class GroupGeetestVerifyPlugin(Star):
         
         text = event.message_str.strip()
         
-        # 如果启用了极验验证，使用 API 验证验证码
-        if self.enable_geetest_verify:
+        # 根据用户的验证方法决定处理方式
+        verify_method = self.verify_states[state_key].get("verify_method", "geetest")
+        
+        if verify_method == "geetest":
             # 提取验证码（6位数字+字母）
             match = re.search(r'([A-Za-z0-9]{6})', text)
             if not match:

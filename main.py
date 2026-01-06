@@ -135,7 +135,8 @@ class GroupGeetestVerifyPlugin(Star):
         url = f"{self.api_base_url}/verify/check"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": f"AstrBot/v{VERSION}"
         }
         data = {
             "group_id": str(gid),

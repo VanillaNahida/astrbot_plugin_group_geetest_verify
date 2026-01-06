@@ -9,6 +9,7 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
+from astrbot.core.config.default import VERSION
 
 
 @register(
@@ -45,7 +46,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enabled_groups = self.config.get("enabled_groups", schema_defaults.get("enabled_groups", []))
             self.verification_timeout = self.config.get("verification_timeout", schema_defaults.get("verification_timeout", 300))
             self.max_wrong_answers = self.config.get("max_wrong_answers", schema_defaults.get("max_wrong_answers", 5))
-            self.api_base_url = self.config.get("api_base_url", schema_defaults.get("api_base_url", "http://localhost:8000"))
+            self.api_base_url = self.config.get("api_base_url", schema_defaults.get("api_base_url", ""))
             self.api_key = self.config.get("api_key", schema_defaults.get("api_key", ""))
             self.enable_geetest_verify = self.config.get("enable_geetest_verify", schema_defaults.get("enable_geetest_verify", False))
             self.enable_level_verify = self.config.get("enable_level_verify", schema_defaults.get("enable_level_verify", False))
@@ -55,7 +56,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enabled_groups = schema_defaults.get("enabled_groups", [])
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
             self.max_wrong_answers = schema_defaults.get("max_wrong_answers", 5)
-            self.api_base_url = schema_defaults.get("api_base_url", "http://localhost:8000")
+            self.api_base_url = schema_defaults.get("api_base_url", "")
             self.api_key = schema_defaults.get("api_key", "")
             self.enable_geetest_verify = schema_defaults.get("enable_geetest_verify", False)
             self.enable_level_verify = schema_defaults.get("enable_level_verify", False)
@@ -97,7 +98,7 @@ class GroupGeetestVerifyPlugin(Star):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "AstrBot/v4.7.0"
+            "User-Agent": f"AstrBot/v{VERSION}"
         }
         data = {
             "group_id": str(gid),

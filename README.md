@@ -30,11 +30,11 @@
 3. 安装了PHP 8.4的服务器，可使用[宝塔面板](https://www.bt.cn/)按照文档安装
 
 # 部署后端
-请查看[安装步骤](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)
+请查看[安装步骤](https://github.com/VanillaNahida/group-verify-service#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)
 
 # 使用方法
 1. 在插件市场搜索插件 `astrbot_plugin_group_geetest_verify` 或 `入群网页验证插件`
-2. 安装插件
+2. 安装插件（可以在插件市场安装，或者复制仓库地址，在WebUI中粘贴地址安装）
 3. 配置插件
     1. 登录极验Geetest官网，注册账号并创建一个新的Geetest V4项目
     2. 按照[文档](https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify#%E5%AE%89%E8%A3%85%E6%AD%A5%E9%AA%A4)部署验证后端服务，按照文档配置好Geetest的ID和Key并启动。

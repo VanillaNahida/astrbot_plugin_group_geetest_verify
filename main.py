@@ -210,6 +210,7 @@ class GroupGeetestVerifyPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def handle_event(self, event: AstrMessageEvent):
+        """处理进群退群事件和监听验证码"""
         if event.get_platform_name() != "aiocqhttp":
             return
 

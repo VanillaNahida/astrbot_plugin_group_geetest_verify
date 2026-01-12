@@ -109,6 +109,12 @@
             "type": "string",
             "hint": "要配置的群号（纯数字）"
           },
+          "enabled": {
+            "description": "启用验证",
+            "type": "bool",
+            "default": false,
+            "hint": "是否启用该群的入群验证。默认关闭。"
+          },
           "verification_timeout": {
             "description": "验证总超时时间（秒）",
             "type": "int",

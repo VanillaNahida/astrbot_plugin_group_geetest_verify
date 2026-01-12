@@ -85,6 +85,62 @@ class GroupGeetestVerifyPlugin(Star):
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置失败: {e}")
 
+    def _update_group_config(self, gid: int, **kwargs):
+        """更新群级别配置"""
+        # 查找群级别配置
+        group_config = None
+        for config in self.group_configs:
+            if str(config.get("group_id")) == str(gid):
+                group_config = config
+                break
+        
+        # 如果没有找到群级别配置，创建新的
+        if not group_config:
+            # 基于默认配置创建新的群配置
+            group_config = {
+                "__template_key": "default_config",
+                "group_id": gid,
+                "enabled": False,
+                "verification_timeout": self.verification_timeout,
+                "max_wrong_answers": self.max_wrong_answers,
+                "enable_geetest_verify": self.enable_geetest_verify,
+                "enable_level_verify": self.enable_level_verify,
+                "min_qq_level": self.min_qq_level,
+                "verify_delay": self.verify_delay
+            }
+            self.group_configs.append(group_config)
+        
+        # 更新配置项
+        for key, value in kwargs.items():
+            group_config[key] = value
+        
+        # 确保配置项完整，如果某些字段缺失，使用默认值填充
+        required_fields = ["__template_key", "group_id", "enabled", "verification_timeout", 
+                          "max_wrong_answers", "enable_geetest_verify", "enable_level_verify", 
+                          "min_qq_level", "verify_delay"]
+        
+        for field in required_fields:
+            if field not in group_config:
+                if field == "__template_key":
+                    group_config[field] = "default_config"
+                elif field == "enabled":
+                    group_config[field] = False
+                elif field == "verification_timeout":
+                    group_config[field] = self.verification_timeout
+                elif field == "max_wrong_answers":
+                    group_config[field] = self.max_wrong_answers
+                elif field == "enable_geetest_verify":
+                    group_config[field] = self.enable_geetest_verify
+                elif field == "enable_level_verify":
+                    group_config[field] = self.enable_level_verify
+                elif field == "min_qq_level":
+                    group_config[field] = self.min_qq_level
+                elif field == "verify_delay":
+                    group_config[field] = self.verify_delay
+        
+        # 保存配置
+        self._save_config()
+
     def _get_group_config(self, gid: int) -> dict:
         """获取特定群的配置，如果没有群级别配置则返回默认配置"""
         # 查找群级别配置
@@ -92,6 +148,7 @@ class GroupGeetestVerifyPlugin(Star):
             if str(group_config.get("group_id")) == str(gid):
                 # 返回群级别配置，缺失的配置项使用默认值
                 return {
+                    "enabled": group_config.get("enabled", gid in self.enabled_groups),
                     "verification_timeout": group_config.get("verification_timeout", self.verification_timeout),
                     "max_wrong_answers": group_config.get("max_wrong_answers", self.max_wrong_answers),
                     "enable_geetest_verify": group_config.get("enable_geetest_verify", self.enable_geetest_verify),
@@ -102,6 +159,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 没有找到群级别配置，返回默认配置
         return {
+            "enabled": gid in self.enabled_groups,
             "verification_timeout": self.verification_timeout,
             "max_wrong_answers": self.max_wrong_answers,
             "enable_geetest_verify": self.enable_geetest_verify,
@@ -233,13 +291,9 @@ class GroupGeetestVerifyPlugin(Star):
         state_key = f"{gid}:{uid}"
         
         # 检查群是否开启了验证
-        if self.enabled_groups:
-            if gid not in self.enabled_groups:
-                return
-        else:
-            enabled = self.verify_states.get(f"group_{gid}_enabled", {}).get("enabled", False)
-            if not enabled:
-                return
+        group_config = self._get_group_config(gid)
+        if not group_config["enabled"]:
+            return
         
         # 检查用户是否已被标记为绕过验证
         if state_key in self.verify_states and self.verify_states[state_key].get("status") == "bypassed":
@@ -520,7 +574,9 @@ class GroupGeetestVerifyPlugin(Star):
     async def _timeout_kick(self, uid: str, gid: int, timeout: int = None):
         """处理超时踢出的协程"""
         if timeout is None:
-            timeout = self.verification_timeout
+            # 使用群级别配置
+            group_config = self._get_group_config(gid)
+            timeout = group_config["verification_timeout"]
             
         try:
             if timeout > 120:
@@ -580,15 +636,10 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         # 检查群是否开启了验证
-        if self.enabled_groups:
-            if gid not in self.enabled_groups:
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"当前群未开启验证哦~")
-                return
-        else:
-            enabled = self.verify_states.get(f"group_{gid}_enabled", {}).get("enabled", False)
-            if not enabled:
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"当前群未开启验证哦~")
-                return
+        group_config = self._get_group_config(gid)
+        if not group_config["enabled"]:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"当前群未开启验证哦~")
+            return
         
         # 检查是否有权限（这里简单判断是否@了其他用户）
         message = raw.get("message", [])
@@ -695,15 +746,10 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         # 检查群是否开启了验证
-        if self.enabled_groups:
-            if gid not in self.enabled_groups:
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 当前群未开启验证哦~")
-                return
-        else:
-            enabled = self.verify_states.get(f"group_{gid}_enabled", {}).get("enabled", False)
-            if not enabled:
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 当前群未开启验证哦~")
-                return
+        group_config = self._get_group_config(gid)
+        if not group_config["enabled"]:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 当前群未开启验证哦~")
+            return
         
         # 检查是否有权限（这里简单判断是否@了其他用户）
         message = raw.get("message", [])
@@ -753,16 +799,16 @@ class GroupGeetestVerifyPlugin(Star):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
-        # 检查是否已在配置列表中
-        if gid in self.enabled_groups:
+        # 获取当前群配置
+        group_config = self._get_group_config(gid)
+        
+        # 检查是否已开启
+        if group_config["enabled"]:
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 本群验证已处于开启状态")
             return
         
-        # 添加到启用列表
-        self.enabled_groups.append(gid)
-        
-        # 保存配置
-        self._save_config()
+        # 更新群级别配置
+        self._update_group_config(gid, enabled=True)
         
         # 同时更新内存状态（兼容旧版本）
         self.verify_states[f"group_{gid}_enabled"] = {"enabled": True}
@@ -787,17 +833,16 @@ class GroupGeetestVerifyPlugin(Star):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
-        # 检查是否在配置列表中
-        if self.enabled_groups and gid not in self.enabled_groups:
+        # 获取当前群配置
+        group_config = self._get_group_config(gid)
+        
+        # 检查是否已关闭
+        if not group_config["enabled"]:
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 本群暂未开启验证")
             return
         
-        # 从启用列表中移除
-        if gid in self.enabled_groups:
-            self.enabled_groups.remove(gid)
-            
-            # 保存配置
-            self._save_config()
+        # 更新群级别配置
+        self._update_group_config(gid, enabled=False)
         
         # 同时更新内存状态（兼容旧版本）
         self.verify_states[f"group_{gid}_enabled"] = {"enabled": False}
@@ -830,12 +875,11 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         timeout = int(match.group(1))
-        self.verification_timeout = timeout
         
-        # 保存配置
-        self._save_config()
+        # 更新群级别配置
+        self._update_group_config(gid, verification_timeout=timeout)
         
-        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已将验证超时时间设置为 {timeout} 秒")
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已将本群验证超时时间设置为 {timeout} 秒")
         
         if timeout < 60:
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"你给的时间太少了，建议至少一分钟(60秒)哦ε(*´･ω･)з")
@@ -859,18 +903,18 @@ class GroupGeetestVerifyPlugin(Star):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
+        # 获取当前群配置
+        group_config = self._get_group_config(gid)
+        
         # 检查是否已开启
-        if self.enable_level_verify:
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 等级验证已处于开启状态")
+        if group_config["enable_level_verify"]:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 本群等级验证已处于开启状态")
             return
         
         # 开启等级验证
-        self.enable_level_verify = True
+        self._update_group_config(gid, enable_level_verify=True)
         
-        # 保存配置
-        self._save_config()
-        
-        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已开启等级验证，QQ等级大于等于 {self.min_qq_level} 级的用户将自动跳过验证。")
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已开启本群等级验证，QQ等级大于等于 {group_config['min_qq_level']} 级的用户将自动跳过验证。")
         logger.info(f"[Geetest Verify] 群 {gid} 已开启等级验证")
 
     @filter.command("关闭等级验证")
@@ -890,18 +934,18 @@ class GroupGeetestVerifyPlugin(Star):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
+        # 获取当前群配置
+        group_config = self._get_group_config(gid)
+        
         # 检查是否已关闭
-        if not self.enable_level_verify:
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 等级验证暂未开启")
+        if not group_config["enable_level_verify"]:
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 本群等级验证暂未开启")
             return
         
         # 关闭等级验证
-        self.enable_level_verify = False
+        self._update_group_config(gid, enable_level_verify=False)
         
-        # 保存配置
-        self._save_config()
-        
-        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已关闭等级验证")
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已关闭本群等级验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已关闭等级验证")
 
     @filter.command("设置最低验证等级")
@@ -935,12 +979,10 @@ class GroupGeetestVerifyPlugin(Star):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 等级必须在 0-64 之间")
             return
         
-        self.min_qq_level = min_level
+        # 更新群级别配置
+        self._update_group_config(gid, min_qq_level=min_level)
         
-        # 保存配置
-        self._save_config()
-        
-        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已将最低验证等级设置为 {min_level} 级")
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已将本群最低验证等级设置为 {min_level} 级")
         logger.info(f"[Geetest Verify] 群 {gid} 最低验证等级设置为 {min_level} 级")
 
     async def _get_user_level(self, uid: str) -> int:
@@ -1016,14 +1058,12 @@ class GroupGeetestVerifyPlugin(Star):
         group_config = self._get_group_config(gid)
         
         # 检查群是否开启了验证
-        if self.enabled_groups:
-            if gid not in self.enabled_groups:
-                enabled_status = "❌ 未开启"
-            else:
-                enabled_status = "✅ 已开启"
+        group_config = self._get_group_config(gid)
+        
+        if group_config["enabled"]:
+            enabled_status = "✅ 已开启"
         else:
-            enabled = self.verify_states.get(f"group_{gid}_enabled", {}).get("enabled", False)
-            enabled_status = "✅ 已开启" if enabled else "❌ 未开启"
+            enabled_status = "❌ 未开启"
         
         # 构建配置信息
         config_info = f"""📋 群 {gid} 验证配置信息：

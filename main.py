@@ -16,7 +16,7 @@ from astrbot.core.config.default import VERSION
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）",
     "QQ群极验验证插件",
-    "1.1.2"
+    "1.1.3"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -52,6 +52,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_level_verify = self.config.get("enable_level_verify", schema_defaults.get("enable_level_verify", False))
             self.min_qq_level = self.config.get("min_qq_level", schema_defaults.get("min_qq_level", 20))
             self.verify_delay = self.config.get("verify_delay", schema_defaults.get("verify_delay", 0))
+            self.group_configs = self.config.get("group_configs", [])
         except Exception:
             self.enabled_groups = schema_defaults.get("enabled_groups", [])
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
@@ -62,6 +63,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_level_verify = schema_defaults.get("enable_level_verify", False)
             self.min_qq_level = schema_defaults.get("min_qq_level", 20)
             self.verify_delay = schema_defaults.get("verify_delay", 3)
+            self.group_configs = []
 
     def _save_config(self):
         """保存配置到磁盘"""
@@ -76,11 +78,37 @@ class GroupGeetestVerifyPlugin(Star):
             self.config["enable_level_verify"] = self.enable_level_verify
             self.config["min_qq_level"] = self.min_qq_level
             self.config["verify_delay"] = self.verify_delay
+            self.config["group_configs"] = self.group_configs
             # 保存到磁盘
             self.config.save_config()
             logger.info("[Geetest Verify] 配置已保存到文件")
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置失败: {e}")
+
+    def _get_group_config(self, gid: int) -> dict:
+        """获取特定群的配置，如果没有群级别配置则返回默认配置"""
+        # 查找群级别配置
+        for group_config in self.group_configs:
+            if str(group_config.get("group_id")) == str(gid):
+                # 返回群级别配置，缺失的配置项使用默认值
+                return {
+                    "verification_timeout": group_config.get("verification_timeout", self.verification_timeout),
+                    "max_wrong_answers": group_config.get("max_wrong_answers", self.max_wrong_answers),
+                    "enable_geetest_verify": group_config.get("enable_geetest_verify", self.enable_geetest_verify),
+                    "enable_level_verify": group_config.get("enable_level_verify", self.enable_level_verify),
+                    "min_qq_level": group_config.get("min_qq_level", self.min_qq_level),
+                    "verify_delay": group_config.get("verify_delay", self.verify_delay)
+                }
+        
+        # 没有找到群级别配置，返回默认配置
+        return {
+            "verification_timeout": self.verification_timeout,
+            "max_wrong_answers": self.max_wrong_answers,
+            "enable_geetest_verify": self.enable_geetest_verify,
+            "enable_level_verify": self.enable_level_verify,
+            "min_qq_level": self.min_qq_level,
+            "verify_delay": self.verify_delay
+        }
 
     async def cleanup(self):
         """清理资源，关闭 aiohttp session"""
@@ -222,16 +250,19 @@ class GroupGeetestVerifyPlugin(Star):
             logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已验证过，跳过验证流程")
             return
 
+        # 获取群级别配置
+        group_config = self._get_group_config(gid)
+        
         # 延时2秒
         await asyncio.sleep(2)
         # 检查是否启用了等级验证
         at_user = f"[CQ:at,qq={uid}]"
         skip_verify = False
-        if self.enable_level_verify:
+        if group_config["enable_level_verify"]:
             qq_level = await self._get_user_level(uid)
-            if qq_level >= self.min_qq_level:
-                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {self.min_qq_level}，跳过验证流程")
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {self.min_qq_level}级，已跳过验证流程。")
+            if qq_level >= group_config["min_qq_level"]:
+                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。")
                 # 标记用户为已验证
                 self.verify_states[state_key] = {
                     "status": "verified",
@@ -239,8 +270,8 @@ class GroupGeetestVerifyPlugin(Star):
                 }
                 skip_verify = True
             else:
-                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {self.min_qq_level}，将进入验证流程")
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {self.min_qq_level}级，将进入验证流程。")
+                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}，将进入验证流程")
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}级，将进入验证流程。")
         
         if skip_verify:
             return
@@ -251,15 +282,19 @@ class GroupGeetestVerifyPlugin(Star):
         logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
         
         # 延时发送验证消息
-        if self.verify_delay > 0:
-            logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {self.verify_delay} 秒后发送验证消息")
-            await asyncio.sleep(self.verify_delay)
+        if group_config["verify_delay"] > 0:
+            logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {group_config['verify_delay']} 秒后发送验证消息")
+            await asyncio.sleep(group_config["verify_delay"])
         
-        await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True)
+        await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True, group_config=group_config)
 
-    async def _start_verification_process(self, event: AstrMessageEvent, uid: str, gid: int, question: str, answer: int, is_new_member: bool):
+    async def _start_verification_process(self, event: AstrMessageEvent, uid: str, gid: int, question: str, answer: int, is_new_member: bool, group_config: dict = None):
         """为用户启动或重启验证流程"""
         state_key = f"{gid}:{uid}"
+        
+        # 如果没有提供群配置，则获取默认配置
+        if group_config is None:
+            group_config = self._get_group_config(gid)
         
         # 如果用户已有验证状态，取消之前的任务
         if state_key in self.verify_states:
@@ -267,7 +302,7 @@ class GroupGeetestVerifyPlugin(Star):
             if old_task and not old_task.done():
                 old_task.cancel()
 
-        task = asyncio.create_task(self._timeout_kick(uid, gid))
+        task = asyncio.create_task(self._timeout_kick(uid, gid, group_config["verification_timeout"]))
         
         # 如果是新成员，重置错误计数；否则保留现有错误计数
         if is_new_member:
@@ -277,7 +312,8 @@ class GroupGeetestVerifyPlugin(Star):
                 "answer": answer,
                 "task": task,
                 "wrong_count": 0,
-                "verify_method": "geetest"
+                "verify_method": "geetest",
+                "max_wrong_answers": group_config["max_wrong_answers"]
             }
         else:
             wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
@@ -288,14 +324,15 @@ class GroupGeetestVerifyPlugin(Star):
                 "answer": answer,
                 "task": task,
                 "wrong_count": wrong_count,
-                "verify_method": verify_method
+                "verify_method": verify_method,
+                "max_wrong_answers": group_config["max_wrong_answers"]
             }
 
         at_user = f"[CQ:at,qq={uid}]"
-        timeout_minutes = self.verification_timeout // 60
+        timeout_minutes = group_config["verification_timeout"] // 60
 
         # 如果启用了极验验证，优先使用极验验证
-        if self.enable_geetest_verify and self.api_key:
+        if group_config["enable_geetest_verify"] and self.api_key:
             try:
                 verify_url = await self._create_geetest_verify(gid, uid)
                 if verify_url:
@@ -304,7 +341,7 @@ class GroupGeetestVerifyPlugin(Star):
                         prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
                     else:
                         wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
-                        remaining_attempts = self.max_wrong_answers - wrong_count
+                        remaining_attempts = group_config["max_wrong_answers"] - wrong_count
                         prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}"
                     await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
                     return
@@ -317,7 +354,7 @@ class GroupGeetestVerifyPlugin(Star):
             prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。"
         else:
             wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
-            remaining_attempts = self.max_wrong_answers - wrong_count
+            remaining_attempts = group_config["max_wrong_answers"] - wrong_count
             prompt_message = f"{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining_attempts}"
 
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
@@ -336,6 +373,9 @@ class GroupGeetestVerifyPlugin(Star):
             return
         
         text = event.message_str.strip()
+        
+        # 获取群级别配置
+        group_config = self._get_group_config(gid)
         
         # 根据用户的验证方法决定处理方式
         verify_method = self.verify_states[state_key].get("verify_method", "geetest")
@@ -367,7 +407,8 @@ class GroupGeetestVerifyPlugin(Star):
                 wrong_count = self.verify_states[state_key]["wrong_count"]
                 
                 # 检查是否超过最大错误次数
-                if wrong_count >= self.max_wrong_answers:
+                max_wrong_answers = self.verify_states[state_key].get("max_wrong_answers", group_config["max_wrong_answers"])
+                if wrong_count >= max_wrong_answers:
                     logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
                     
                     # 取消超时任务
@@ -393,7 +434,7 @@ class GroupGeetestVerifyPlugin(Star):
                     return
                 
                 # 重新生成验证链接
-                await self._start_verification_process(event, uid, gid, "", 0, is_new_member=False)
+                await self._start_verification_process(event, uid, gid, "", 0, is_new_member=False, group_config=group_config)
                 event.stop_event()
         else:
             # 使用本地数学题验证
@@ -424,7 +465,8 @@ class GroupGeetestVerifyPlugin(Star):
                 wrong_count = self.verify_states[state_key]["wrong_count"]
                 
                 # 检查是否超过最大错误次数
-                if wrong_count >= self.max_wrong_answers:
+                max_wrong_answers = self.verify_states[state_key].get("max_wrong_answers", group_config["max_wrong_answers"])
+                if wrong_count >= max_wrong_answers:
                     logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
                     
                     # 取消超时任务
@@ -451,7 +493,7 @@ class GroupGeetestVerifyPlugin(Star):
                 
                 # 重新生成问题
                 question, answer = self._generate_math_problem()
-                await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False)
+                await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False, group_config=group_config)
                 event.stop_event()
 
     async def _process_member_decrease(self, event: AstrMessageEvent):
@@ -474,11 +516,14 @@ class GroupGeetestVerifyPlugin(Star):
         
         logger.info(f"[Geetest Verify] 用户 {uid} 已离开群 {gid}，清除验证状态")
 
-    async def _timeout_kick(self, uid: str, gid: int):
+    async def _timeout_kick(self, uid: str, gid: int, timeout: int = None):
         """处理超时踢出的协程"""
+        if timeout is None:
+            timeout = self.verification_timeout
+            
         try:
-            if self.verification_timeout > 120:
-                await asyncio.sleep(self.verification_timeout - 60)
+            if timeout > 120:
+                await asyncio.sleep(timeout - 60)
 
                 state_key = f"{gid}:{uid}"
                 if state_key in self.verify_states:
@@ -530,7 +575,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 检查群是否开启了验证
@@ -645,7 +690,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 检查群是否开启了验证
@@ -704,7 +749,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 检查是否已在配置列表中
@@ -738,7 +783,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 检查是否在配置列表中
@@ -773,7 +818,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 从消息中提取数字
@@ -810,7 +855,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 检查是否已开启
@@ -841,7 +886,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 检查是否已关闭
@@ -872,7 +917,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查用户权限
         if not await self._check_user_permission(event, uid, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主和管理员才能使用此指令")
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
         # 从消息中提取数字
@@ -924,7 +969,12 @@ class GroupGeetestVerifyPlugin(Star):
             return 0
 
     async def _check_user_permission(self, event: AstrMessageEvent, uid: str, gid: int) -> bool:
-        """检查用户是否有权限（群主或管理员）"""
+        """检查用户是否有权限（群主、管理员或 Bot 管理员）"""
+        # 首先检查是否是 Bot 管理员
+        if event.is_admin():
+            return True
+        
+        # 如果不是 Bot 管理员，检查群权限
         try:
             member_info = await event.bot.api.call_action("get_group_member_info", group_id=gid, user_id=int(uid))
             role = member_info.get("role")
@@ -943,3 +993,50 @@ class GroupGeetestVerifyPlugin(Star):
         except Exception as e:
             logger.error(f"[Geetest Verify] 检查 bot 权限失败: {e}")
             return False
+
+    @filter.command("查看验证配置")
+    async def show_config_command(self, event: AstrMessageEvent):
+        """查看当前群的验证配置"""
+        raw = event.message_obj.raw_message
+        uid = str(event.get_sender_id())
+        gid = raw.get("group_id")
+        
+        # 检查 bot 权限
+        if not await self._check_bot_permission(event, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
+            return
+        
+        # 检查用户权限
+        if not await self._check_user_permission(event, uid, gid):
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
+            return
+        
+        # 获取群级别配置
+        group_config = self._get_group_config(gid)
+        
+        # 检查群是否开启了验证
+        if self.enabled_groups:
+            if gid not in self.enabled_groups:
+                enabled_status = "❌ 未开启"
+            else:
+                enabled_status = "✅ 已开启"
+        else:
+            enabled = self.verify_states.get(f"group_{gid}_enabled", {}).get("enabled", False)
+            enabled_status = "✅ 已开启" if enabled else "❌ 未开启"
+        
+        # 构建配置信息
+        config_info = f"""📋 群 {gid} 验证配置信息：
+
+🔹 验证状态：{enabled_status}
+🔹 验证总超时时间：{group_config['verification_timeout']} 秒
+🔹 最大错误回答次数：{group_config['max_wrong_answers']} 次
+🔹 极验验证：{'✅ 已启用' if group_config['enable_geetest_verify'] else '❌ 未启用'}
+🔹 等级验证：{'✅ 已启用' if group_config['enable_level_verify'] else '❌ 未启用'}
+🔹 最低QQ等级：{group_config['min_qq_level']} 级
+🔹 入群验证延时：{group_config['verify_delay']} 秒
+
+💡 配置来源：{'群级别配置' if any(str(cfg.get('group_id')) == str(gid) for cfg in self.group_configs) else '全局默认配置'}
+        """
+        
+        await event.bot.api.call_action("send_group_msg", group_id=gid, message=config_info)
+        logger.info(f"[Geetest Verify] 群 {gid} 查看验证配置")

@@ -89,3 +89,7 @@
  - 二群：1031065631
  - 三群：195260107 （推荐）
  - 四群：1074471035
+
+**Star History**
+
+[![Star History Chart](https://api.star-history.com/svg?repos=VanillaNahida/Group-Geetest-Verify&type=Date)](https://star-history.com/#VanillaNahida/Group-Geetest-Verify&Date)

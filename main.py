@@ -317,7 +317,7 @@ class GroupGeetestVerifyPlugin(Star):
             qq_level = await self._get_user_level(uid)
             if qq_level >= group_config["min_qq_level"]:
                 logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
-                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。")
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。\n欢迎你的加入！")
                 # 标记用户为已验证
                 self.verify_states[state_key] = {
                     "status": "verified",
@@ -586,7 +586,10 @@ class GroupGeetestVerifyPlugin(Star):
                 if state_key in self.verify_states:
                     bot = self.context.get_platform("aiocqhttp").get_client()
                     at_user = f"[CQ:at,qq={uid}]"
-                    reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！"
+                    # 刷新验证链接
+                    verify_url = await self._create_geetest_verify(gid, uid)
+                    timeout_minutes = group_config["verification_timeout"] // 60
+                    reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n 请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接已失效，请使用新链接完成验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
                     await bot.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
                     logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送提醒")
 

@@ -628,13 +628,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f" bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"[CQ:at,qq={uid}] 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -738,13 +733,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -792,13 +782,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -826,13 +811,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -860,13 +840,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -896,13 +871,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -927,13 +897,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -958,13 +923,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         
@@ -1014,31 +974,22 @@ class GroupGeetestVerifyPlugin(Star):
             logger.error(f"[Geetest Verify] 获取用户 {uid} 的QQ等级失败: {e}")
             return 0
 
-    async def _check_user_permission(self, event: AstrMessageEvent, uid: str, gid: int) -> bool:
-        """检查用户是否有权限（群主、管理员或 Bot 管理员）"""
-        # 首先检查是否是 Bot 管理员
+    async def _check_permission(self, event: AstrMessageEvent) -> bool:
+        """检查用户权限（bot管理员、群主、管理员才可使用）"""
+        raw_message = event.message_obj.raw_message
+        
+        # 检查是否是 Bot 管理员
         if event.is_admin():
+            logger.debug(f"用户为Bot管理员，跳过权限检查")
             return True
         
-        # 如果不是 Bot 管理员，检查群权限
-        try:
-            member_info = await event.bot.api.call_action("get_group_member_info", group_id=gid, user_id=int(uid))
-            role = member_info.get("role")
-            return role in ["admin", "owner"]
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 检查用户权限失败: {e}")
-            return False
-
-    async def _check_bot_permission(self, event: AstrMessageEvent, gid: int) -> bool:
-        """检查 bot 是否有管理员权限"""
-        try:
-            bot_uid = str(event.get_self_id())
-            member_info = await event.bot.api.call_action("get_group_member_info", group_id=gid, user_id=int(bot_uid))
-            role = member_info.get("role")
-            return role in ["admin", "owner"]
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 检查 bot 权限失败: {e}")
-            return False
+        # 检查群权限（群主、管理员才可使用）
+        sender_role = raw_message.get("sender", {}).get("role", "member") if raw_message else "member"
+        if sender_role in ["admin", "owner"]:
+            logger.debug(f"用户为{sender_role}，跳过权限检查")
+            return True
+        
+        return False
 
     @filter.command("查看验证配置")
     async def show_config_command(self, event: AstrMessageEvent):
@@ -1047,13 +998,8 @@ class GroupGeetestVerifyPlugin(Star):
         uid = str(event.get_sender_id())
         gid = raw.get("group_id")
         
-        # 检查 bot 权限
-        if not await self._check_bot_permission(event, gid):
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ bot 权限不足，需要管理员权限。")
-            return
-        
         # 检查用户权限
-        if not await self._check_user_permission(event, uid, gid):
+        if not await self._check_permission(event):
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 只有群主、管理员或 Bot 管理员才能使用此指令")
             return
         

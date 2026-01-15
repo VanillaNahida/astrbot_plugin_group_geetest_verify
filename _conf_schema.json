@@ -106,8 +106,8 @@
         "items": {
           "group_id": {
             "description": "群号",
-            "type": "string",
-            "hint": "要配置的群号（纯数字）"
+            "type": "int",
+            "hint": "要配置的群号"
           },
           "enabled": {
             "description": "启用验证",

@@ -26,6 +26,10 @@
 
 # 使用方法
 
+  > [!WARNING]
+  >
+  > 请确保您的AstrBot版本号 ≥ `v4.10.6` ，插件已在该版本上测试通过，我们不对低版本AstrBot使用此插件由此导致的问题负责。
+
 ## 方案一：本地部署后端服务
 
 ### 前置条件
@@ -52,6 +56,7 @@
 
 ### 获取后端地址和API Key
 请加群 [195260107](https://qm.qq.com/q/1od5TMYrKE) 联系开发者，获取验证后端的 URL 和 API Key。
+直接私聊说明来意即可，看到了就会回复。
 
 ### 插件配置
 1. 在插件市场搜索插件 `astrbot_plugin_group_geetest_verify` 或 `入群网页验证插件`
@@ -61,9 +66,13 @@
     2. 配置入群验证的相关参数，如验证超时时间、验证失败后的操作等。
 4. 保存重载插件配置，使插件生效。
 
-# 命令
+  > [!TIP]
+  >
+  > 安装并配置好插件后建议**重启bot**，确保插件生效。
 
-| 命令 | 用法 | 权限要求 | 说明 |
+# 命令总览
+
+| 命令 | 示例用法 | 权限要求 | 说明 |
 |------|------|----------|------|
 | `/重新验证` | `/重新验证 @用户` 或 `/重新验证 从未发言的人` | 群主/管理员/Bot管理员 | 强制指定用户重新验证。可以@单个用户，或使用"从未发言的人"为所有未验证且未发言的用户启动验证 |
 | `/绕过验证` | `/绕过验证 @用户` | 群主/管理员/Bot管理员 | 让指定用户绕过验证，该用户入群时将不再需要验证 |
@@ -76,7 +85,8 @@
 | `/设置最低验证等级` | `/设置最低验证等级 等级数` | 群主/管理员/Bot管理员 | 设置当前群的最低验证等级（0-64），QQ等级大于等于此等级的用户将自动跳过验证 |
 
 # 致谢
-- [@yjwmidc](https://github.com/yjwmidc/) 验证后端贡献者
+- [@yjwmidc](https://github.com/yjwmidc) 验证后端贡献者
+- [@makotowu](https://github.com/makotowu) 负责验证后端的部署和前后端重构工作，为本项目提供公益验证服务
 - [astrbot_plugin_Group-Verification_PRO](https://github.com/huntuo146/astrbot_plugin_Group-Verification_PRO) 参考该代码实现的入群验证插件，感谢该项目作者。
 
 # bug反馈
@@ -90,6 +100,6 @@
  - 三群：195260107 （推荐）
  - 四群：1074471035
 
-**Star History**
+# Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=VanillaNahida/Group-Geetest-Verify&type=Date)](https://star-history.com/#VanillaNahida/Group-Geetest-Verify&Date)

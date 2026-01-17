@@ -1,10 +1,4 @@
 {
-  "enabled_groups": {
-    "description": "启用插件的群号列表",
-    "type": "list",
-    "default": [],
-    "hint": "填入需要开启验证的群号（纯数字）。如果留空（默认），则对机器人所在的所有群生效。"
-  },
   "verification_timeout": {
     "description": "验证总超时时间（秒）",
     "type": "int",

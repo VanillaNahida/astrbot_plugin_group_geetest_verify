@@ -43,7 +43,6 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 从配置文件读取配置，如果不存在则使用 schema 中的默认值
         try:
-            self.enabled_groups = self.config.get("enabled_groups", schema_defaults.get("enabled_groups", []))
             self.verification_timeout = self.config.get("verification_timeout", schema_defaults.get("verification_timeout", 300))
             self.max_wrong_answers = self.config.get("max_wrong_answers", schema_defaults.get("max_wrong_answers", 5))
             self.api_base_url = self.config.get("api_base_url", schema_defaults.get("api_base_url", ""))
@@ -54,7 +53,6 @@ class GroupGeetestVerifyPlugin(Star):
             self.verify_delay = self.config.get("verify_delay", schema_defaults.get("verify_delay", 0))
             self.group_configs = self.config.get("group_configs", [])
         except Exception:
-            self.enabled_groups = schema_defaults.get("enabled_groups", [])
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
             self.max_wrong_answers = schema_defaults.get("max_wrong_answers", 5)
             self.api_base_url = schema_defaults.get("api_base_url", "")
@@ -69,7 +67,6 @@ class GroupGeetestVerifyPlugin(Star):
         """保存配置到磁盘"""
         try:
             # 更新配置字典
-            self.config["enabled_groups"] = self.enabled_groups
             self.config["verification_timeout"] = self.verification_timeout
             self.config["max_wrong_answers"] = self.max_wrong_answers
             self.config["api_base_url"] = self.api_base_url
@@ -148,7 +145,7 @@ class GroupGeetestVerifyPlugin(Star):
             if str(group_config.get("group_id")) == str(gid):
                 # 返回群级别配置，缺失的配置项使用默认值
                 return {
-                    "enabled": group_config.get("enabled", gid in self.enabled_groups),
+                    "enabled": group_config.get("enabled", False),
                     "verification_timeout": group_config.get("verification_timeout", self.verification_timeout),
                     "max_wrong_answers": group_config.get("max_wrong_answers", self.max_wrong_answers),
                     "enable_geetest_verify": group_config.get("enable_geetest_verify", self.enable_geetest_verify),
@@ -159,7 +156,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 没有找到群级别配置，返回默认配置
         return {
-            "enabled": gid in self.enabled_groups,
+            "enabled": False,
             "verification_timeout": self.verification_timeout,
             "max_wrong_answers": self.max_wrong_answers,
             "enable_geetest_verify": self.enable_geetest_verify,

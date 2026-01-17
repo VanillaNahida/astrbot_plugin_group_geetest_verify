@@ -573,9 +573,11 @@ class GroupGeetestVerifyPlugin(Star):
 
     async def _timeout_kick(self, uid: str, gid: int, timeout: int = None):
         """处理超时踢出的协程"""
+        # 获取群配置，修复错误 cannot access local variable 'group_config' where it is not associated with a value
+        group_config = self._get_group_config(gid)
+        
+        # 如果未提供超时时间，使用配置中的值
         if timeout is None:
-            # 使用群级别配置
-            group_config = self._get_group_config(gid)
             timeout = group_config["verification_timeout"]
             
         try:
@@ -588,10 +590,23 @@ class GroupGeetestVerifyPlugin(Star):
                     at_user = f"[CQ:at,qq={uid}]"
                     # 刷新验证链接
                     verify_url = await self._create_geetest_verify(gid, uid)
-                    timeout_minutes = group_config["verification_timeout"] // 60
-                    reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n 请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接已失效，请使用新链接完成验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
-                    await bot.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                    logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送提醒")
+                    timeout_minutes = timeout // 60
+                    
+                    if verify_url:
+                        reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n 请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                        await bot.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
+                        logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送提醒")
+                    else:
+                        # 极验验证失败，回退到数学题验证
+                        question, answer = self._generate_math_problem()
+                        reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内回答数学题：{question}"
+                        await bot.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
+                        # 更新用户的验证状态为数学题
+                        if state_key in self.verify_states:
+                            self.verify_states[state_key]["verify_method"] = "math"
+                            self.verify_states[state_key]["question"] = question
+                            self.verify_states[state_key]["answer"] = answer
+                        logger.info(f"[Geetest Verify] 用户 {uid} 极验验证失败，已回退到数学题验证")
 
             await asyncio.sleep(60)
 

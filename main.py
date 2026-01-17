@@ -1026,8 +1026,11 @@ class GroupGeetestVerifyPlugin(Star):
         else:
             enabled_status = "❌ 未开启"
         
+        # 获取群名称
+        group_name = raw.get("group_name", "")
+        
         # 构建配置信息
-        config_info = f"""📋 群 {gid} 验证配置信息：
+        config_info = f"""📋 群 {group_name}（{gid}）的验证配置信息：
 
 🔹 验证状态：{enabled_status}
 🔹 验证总超时时间：{group_config['verification_timeout']} 秒
@@ -1037,8 +1040,7 @@ class GroupGeetestVerifyPlugin(Star):
 🔹 最低QQ等级：{group_config['min_qq_level']} 级
 🔹 入群验证延时：{group_config['verify_delay']} 秒
 
-💡 配置来源：{'群级别配置' if any(str(cfg.get('group_id')) == str(gid) for cfg in self.group_configs) else '全局默认配置'}
-        """
+💡 配置来源：{'群级别配置' if any(str(cfg.get('group_id')) == str(gid) for cfg in self.group_configs) else '全局默认配置'}"""
         
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=config_info)
         logger.info(f"[Geetest Verify] 群 {gid} 查看验证配置")

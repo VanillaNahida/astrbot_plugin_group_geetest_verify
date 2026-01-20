@@ -16,7 +16,7 @@ from astrbot.core.config.default import VERSION
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）",
     "QQ群极验验证插件",
-    "1.1.4"
+    "1.1.9"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):

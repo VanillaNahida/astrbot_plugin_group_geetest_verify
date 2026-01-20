@@ -660,12 +660,7 @@ class GroupGeetestVerifyPlugin(Star):
                 target_uid = str(seg.get("data", {}).get("qq"))
                 break
         
-        # 如果没有@用户，检查是否是"从未发言的人"
-        text = event.message_str.replace("/重新验证", "").strip()
-        if not target_uid and text == "从未发言的人":
-            await self._reverify_never_speak(event, gid, uid)
-            return
-        
+        # 如果没有@用户，提示用户@需要重新验证的用户
         if not target_uid:
             await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 请@需要重新验证的用户。")
             return
@@ -688,55 +683,6 @@ class GroupGeetestVerifyPlugin(Star):
         await self._start_verification_process(event, target_uid, gid, question, answer, is_new_member=True)
         
         await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已要求 [CQ:at,qq={target_uid}] 重新验证")
-
-    async def _reverify_never_speak(self, event: AstrMessageEvent, gid: int, operator_uid: str):
-        """为从未发言的人重新验证"""
-        try:
-            # 获取群成员列表
-            member_list = await event.bot.api.call_action("get_group_member_list", group_id=gid)
-            
-            count = 0
-            for member in member_list:
-                member_uid = str(member.get("user_id"))
-                
-                # 跳过机器人自己
-                if member_uid == str(event.get_self_id()):
-                    continue
-                
-                # 跳过管理员和群主
-                if member.get("role") in ["admin", "owner"]:
-                    continue
-                
-                # 检查用户是否已验证过
-                member_state_key = f"{gid}:{member_uid}"
-                if member_state_key in self.verify_states:
-                    state = self.verify_states[member_state_key]
-                    if state.get("status") == "verified" or state.get("status") == "bypassed":
-                        continue
-                
-                # 为该用户启动验证
-                question, answer = self._generate_math_problem()
-                
-                # 如果用户正在验证中，取消之前的任务
-                if member_state_key in self.verify_states:
-                    old_task = self.verify_states[member_state_key].get("task")
-                    if old_task and not old_task.done():
-                        old_task.cancel()
-                
-                # 启动验证流程
-                await self._start_verification_process(event, member_uid, gid, question, answer, is_new_member=True)
-                
-                count += 1
-                logger.info(f"[Geetest Verify] 为从未发言的用户 {member_uid} 启动验证")
-                
-                # 等待2秒再处理下一个
-                await asyncio.sleep(2)
-            
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"✅ 已为 {count} 位从未发言的用户启动验证")
-            
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 获取群成员列表失败: {e}")
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=f"❎ 获取群成员列表失败！")
 
     @filter.command("绕过验证")
     async def bypass_command(self, event: AstrMessageEvent):

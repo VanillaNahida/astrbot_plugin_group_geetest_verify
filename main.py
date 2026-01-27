@@ -172,7 +172,7 @@ class GroupGeetestVerifyPlugin(Star):
             logger.info("[Geetest Verify] 已关闭 aiohttp ClientSession")
 
     async def _create_geetest_verify(self, gid: int, uid: str) -> str:
-        """调用极验 API 生成验证链接"""
+        """调用极验 API 生成验证链接，返回路径部分"""
         if not self.api_key:
             logger.error("[Geetest Verify] API 密钥未配置")
             return None
@@ -193,9 +193,13 @@ class GroupGeetestVerifyPlugin(Star):
                 if response.status == 200:
                     result = await response.json()
                     if result.get("code") == 0:
-                        verify_url = result.get("data", {}).get("url")
-                        logger.info(f"[Geetest Verify] 成功生成验证链接: {verify_url}")
-                        return verify_url
+                        full_url = result.get("data", {}).get("url")
+                        # 提取 URL 的路径部分（去掉域名和协议）
+                        from urllib.parse import urlparse
+                        parsed = urlparse(full_url)
+                        verify_url_path = parsed.path
+                        logger.info(f"[Geetest Verify] 成功生成验证链接路径: {verify_url_path}")
+                        return verify_url_path
                     else:
                         logger.error(f"[Geetest Verify] API 返回错误: {result.get('msg')}")
                         return None
@@ -386,15 +390,17 @@ class GroupGeetestVerifyPlugin(Star):
         # 如果启用了极验验证，优先使用极验验证
         if group_config["enable_geetest_verify"] and self.api_key:
             try:
-                verify_url = await self._create_geetest_verify(gid, uid)
-                if verify_url:
+                verify_url_path = await self._create_geetest_verify(gid, uid)
+                if verify_url_path:
                     self.verify_states[state_key]["verify_method"] = "geetest"
+                    # 拼接完整 URL
+                    full_verify_url = f"{self.api_base_url}{verify_url_path}"
                     if is_new_member:
-                        prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                        prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。"
                     else:
                         wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
                         remaining_attempts = group_config["max_wrong_answers"] - wrong_count
-                        prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}"
+                        prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}"
                     await event.bot.api.call_action("send_group_msg", group_id=gid, message=prompt_message)
                     return
             except Exception as e:
@@ -586,11 +592,13 @@ class GroupGeetestVerifyPlugin(Star):
                     bot = self.context.get_platform("aiocqhttp").get_client()
                     at_user = f"[CQ:at,qq={uid}]"
                     # 刷新验证链接
-                    verify_url = await self._create_geetest_verify(gid, uid)
+                    verify_url_path = await self._create_geetest_verify(gid, uid)
                     timeout_minutes = timeout // 60
                     
-                    if verify_url:
-                        reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                    if verify_url_path:
+                        # 拼接完整 URL
+                        full_verify_url = f"{self.api_base_url}{verify_url_path}"
+                        reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。"
                         await bot.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
                         logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送提醒")
                     else:

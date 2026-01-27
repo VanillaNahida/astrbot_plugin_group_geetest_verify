@@ -51,6 +51,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_level_verify = self.config.get("enable_level_verify", schema_defaults.get("enable_level_verify", False))
             self.min_qq_level = self.config.get("min_qq_level", schema_defaults.get("min_qq_level", 20))
             self.verify_delay = self.config.get("verify_delay", schema_defaults.get("verify_delay", 0))
+            self.error_verification = self.config.get("error_verification", schema_defaults.get("error_verification", "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证"))
             self.group_configs = self.config.get("group_configs", [])
         except Exception:
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
@@ -75,6 +76,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.config["enable_level_verify"] = self.enable_level_verify
             self.config["min_qq_level"] = self.min_qq_level
             self.config["verify_delay"] = self.verify_delay
+            self.config["error_verification"] = self.error_verification
             self.config["group_configs"] = self.group_configs
             # 保存到磁盘
             self.config.save_config()
@@ -151,7 +153,8 @@ class GroupGeetestVerifyPlugin(Star):
                     "enable_geetest_verify": group_config.get("enable_geetest_verify", self.enable_geetest_verify),
                     "enable_level_verify": group_config.get("enable_level_verify", self.enable_level_verify),
                     "min_qq_level": group_config.get("min_qq_level", self.min_qq_level),
-                    "verify_delay": group_config.get("verify_delay", self.verify_delay)
+                    "verify_delay": group_config.get("verify_delay", self.verify_delay),
+                    "error_verification": group_config.get("error_verification", self.error_verification)
                 }
         
         # 没有找到群级别配置，返回默认配置
@@ -162,7 +165,8 @@ class GroupGeetestVerifyPlugin(Star):
             "enable_geetest_verify": self.enable_geetest_verify,
             "enable_level_verify": self.enable_level_verify,
             "min_qq_level": self.min_qq_level,
-            "verify_delay": self.verify_delay
+            "verify_delay": self.verify_delay,
+            "error_verification": self.error_verification
         }
 
     async def cleanup(self):
@@ -438,6 +442,23 @@ class GroupGeetestVerifyPlugin(Star):
                 logger.info(f"已撤回未验证用户 {uid} 在群 {gid} 的消息")
         except Exception as e:
             logger.warning(f"撤回消息失败: {e}")
+        
+        # 发送验证提示消息
+        try:
+            group_config = self._get_group_config(gid)
+            at_user = f"[CQ:at,qq={uid}]"
+            timeout_minutes = group_config["verification_timeout"] // 60
+            
+            # 使用配置中的提示模板，替换变量
+            error_msg = group_config["error_verification"].format(
+                at_user=at_user,
+                timeout=timeout_minutes
+            )
+            
+            await event.bot.api.call_action("send_group_msg", group_id=gid, message=error_msg)
+            logger.info(f"[Geetest Verify] 已向未验证用户 {uid} 发送验证提示")
+        except Exception as e:
+            logger.warning(f"[Geetest Verify] 发送验证提示失败: {e}")
         
         text = event.message_str.strip()
         

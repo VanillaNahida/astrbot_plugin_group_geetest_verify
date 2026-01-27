@@ -430,6 +430,15 @@ class GroupGeetestVerifyPlugin(Star):
         if self.verify_states[state_key].get("status") != "pending":
             return
         
+        # 撤回未验证用户的消息
+        try:
+            message_id = raw.get("message_id")
+            if message_id:
+                await event.bot.api.call_action("delete_msg", message_id=message_id)
+                logger.info(f"已撤回未验证用户 {uid} 在群 {gid} 的消息")
+        except Exception as e:
+            logger.warning(f"撤回消息失败: {e}")
+        
         text = event.message_str.strip()
         
         # 获取群级别配置

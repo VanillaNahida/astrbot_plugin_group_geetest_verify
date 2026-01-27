@@ -434,33 +434,63 @@ class GroupGeetestVerifyPlugin(Star):
         if self.verify_states[state_key].get("status") != "pending":
             return
         
-        # 撤回未验证用户的消息
-        try:
-            message_id = raw.get("message_id")
-            if message_id:
-                await event.bot.api.call_action("delete_msg", message_id=message_id)
-                logger.info(f"已撤回未验证用户 {uid} 在群 {gid} 的消息")
-        except Exception as e:
-            logger.warning(f"撤回消息失败: {e}")
-        
-        # 发送验证提示消息
-        try:
-            group_config = self._get_group_config(gid)
-            at_user = f"[CQ:at,qq={uid}]"
-            timeout_minutes = group_config["verification_timeout"] // 60
-            
-            # 使用配置中的提示模板，替换变量
-            error_msg = group_config["error_verification"].format(
-                at_user=at_user,
-                timeout=timeout_minutes
-            )
-            
-            await event.bot.api.call_action("send_group_msg", group_id=gid, message=error_msg)
-            logger.info(f"[Geetest Verify] 已向未验证用户 {uid} 发送验证提示")
-        except Exception as e:
-            logger.warning(f"[Geetest Verify] 发送验证提示失败: {e}")
-        
         text = event.message_str.strip()
+        
+        # 获取群级别配置
+        group_config = self._get_group_config(gid)
+        
+        # 根据用户的验证方法决定处理方式
+        verify_method = self.verify_states[state_key].get("verify_method", "geetest")
+        
+        # 先检查消息是否匹配验证码，如果是验证码则不撤回
+        is_verification_answer = False
+        
+        if verify_method == "geetest":
+            # 检查是否是极验验证码（6位数字+字母）
+            match = re.search(r'([A-Za-z0-9]{6})', text)
+            if match:
+                is_verification_answer = True
+        else:
+            # 检查是否是数学题答案
+            try:
+                match = re.search(r'(\d+)', text)
+                if match:
+                    user_answer = int(match.group(1))
+                    correct_answer = self.verify_states[state_key].get("answer")
+                    if user_answer == correct_answer:
+                        is_verification_answer = True
+            except (ValueError, TypeError):
+                pass
+        
+        # 如果不是验证答案，才撤回并提示
+        if not is_verification_answer:
+            # 撤回未验证用户的消息
+            try:
+                message_id = raw.get("message_id")
+                if message_id:
+                    await event.bot.api.call_action("delete_msg", message_id=message_id)
+                    logger.info(f"已撤回未验证用户 {uid} 在群 {gid} 的消息")
+            except Exception as e:
+                logger.warning(f"撤回消息失败: {e}")
+            
+            # 发送验证提示消息
+            try:
+                at_user = f"[CQ:at,qq={uid}]"
+                timeout_minutes = group_config["verification_timeout"] // 60
+                
+                # 使用配置中的提示模板，替换变量
+                error_msg = group_config["error_verification"].format(
+                    at_user=at_user,
+                    timeout=timeout_minutes
+                )
+                
+                await event.bot.api.call_action("send_group_msg", group_id=gid, message=error_msg)
+                logger.info(f"[Geetest Verify] 已向未验证用户 {uid} 发送验证提示")
+            except Exception as e:
+                logger.warning(f"[Geetest Verify] 发送验证提示失败: {e}")
+            
+            # 不是验证答案，直接返回
+            return
         
         # 获取群级别配置
         group_config = self._get_group_config(gid)

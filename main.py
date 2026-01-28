@@ -439,6 +439,35 @@ class GroupGeetestVerifyPlugin(Star):
 
         raw = event.message_obj.raw_message
         
+        # 调试：输出消息内容
+        logger.info(f"[Geetest Verify] 收到消息 - message_str: {event.message_str}, 原始类型: {type(raw)}")
+        if platform == "telegram":
+            message_obj = self._get_raw_value(raw, "message") or {}
+            logger.info(f"[Geetest Verify] Telegram 消息 - text: {self._get_raw_value(message_obj, 'text')}, caption: {self._get_raw_value(message_obj, 'caption')}")
+        
+        # 手动检测和处理命令（因为命令过滤器可能无法正确处理带 @ 的命令）
+        message_str = event.message_str.strip()
+        if message_str.startswith('/'):
+            logger.info(f"[Geetest Verify] 检测到命令消息: {message_str}")
+            # 解析命令
+            parts = message_str.split(maxsplit=1)
+            command = parts[0][1:]  # 去掉 /
+            
+            # 处理重新验证命令
+            if command == "重新验证" or command == "reverify" or command == "rv":
+                logger.info(f"[Geetest Verify] 手动触发重新验证命令")
+                await self.reverify_command(event)
+                return
+            # 处理绕过验证命令
+            elif command == "绕过验证" or command == "bypass":
+                logger.info(f"[Geetest Verify] 手动触发绕过验证命令")
+                await self.bypass_command(event)
+                return
+            # 其他命令由命令处理器处理
+            else:
+                logger.info(f"[Geetest Verify] 命令 {command} 由命令处理器处理，跳过事件处理")
+                return
+        
         # 获取群组 ID 并验证
         gid = self._get_group_id(platform, raw)
         if gid is None:
@@ -447,12 +476,23 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 处理 Telegram 平台的群事件
         if platform == "telegram":
+            # 添加详细日志
+            logger.info(f"[Geetest Verify] Telegram 群事件 - new_chat_member: {bool(self._get_raw_value(raw, 'new_chat_member'))}, left_chat_member: {bool(self._get_raw_value(raw, 'left_chat_member'))}, text: {self._get_raw_value(raw, 'text')}, message_id: {self._get_raw_value(raw, 'message_id')}")
+            
             if self._get_raw_value(raw, "new_chat_member"):
+                logger.info(f"[Geetest Verify] 检测到新成员入群事件 (new_chat_member)")
+                await self._process_new_member(event)
+            elif self._get_raw_value(raw, "new_chat_members"):
+                logger.info(f"[Geetest Verify] 检测到新成员入群事件 (new_chat_members)")
                 await self._process_new_member(event)
             elif self._get_raw_value(raw, "left_chat_member"):
+                logger.info(f"[Geetest Verify] 检测到成员退群事件")
                 await self._process_member_decrease(event)
             elif self._get_raw_value(raw, "text") or self._get_raw_value(raw, "message_id"):
+                logger.info(f"[Geetest Verify] 检测到群消息事件")
                 await self._process_verification_message(event)
+            else:
+                logger.info(f"[Geetest Verify] 未识别的 Telegram 事件类型")
         # 处理 OneBot (aiocqhttp) 平台的群事件
         elif platform == "aiocqhttp":
             post_type = self._get_raw_value(raw, "post_type")
@@ -475,75 +515,99 @@ class GroupGeetestVerifyPlugin(Star):
             logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过新成员处理")
             return
         
-        # 根据平台获取用户 ID
+        # 根据平台获取用户 ID 列表
+        users = []
         if platform == "telegram":
-            new_member = self._get_raw_value(raw, "new_chat_member") or {}
-            user = self._get_raw_value(new_member, "user") or {}
-            uid = str(self._get_raw_value(user, "id"))
-        else:
-            uid = str(self._get_raw_value(raw, "user_id"))
-        
-        state_key = f"{gid}:{uid}"
-        
-        # 检查群是否开启了验证
-        group_config = self._get_group_config(gid)
-        if not group_config["enabled"]:
-            return
-        
-        # 检查用户是否已被标记为绕过验证
-        if state_key in self.verify_states and self.verify_states[state_key].get("status") == "bypassed":
-            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已标记为绕过验证，跳过验证流程")
-            return
-        
-        # 检查用户是否已验证过
-        if state_key in self.verify_states and self.verify_states[state_key].get("status") == "verified":
-            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已验证过，跳过验证流程")
-            return
-
-        # 获取群级别配置
-        group_config = self._get_group_config(gid)
-        
-        # 延时2秒
-        await asyncio.sleep(2)
-        
-        # 格式化用户提及
-        at_user = self._format_user_mention(event, uid)
-        skip_verify = False
-        
-        # 检查是否启用了等级验证（仅 QQ 平台支持，Telegram 没有等级系统）
-        if platform == "aiocqhttp" and group_config["enable_level_verify"]:
-            qq_level = await self._get_user_level(uid)
-            if qq_level >= group_config["min_qq_level"]:
-                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
-                await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。\n欢迎你的加入！")
-                # 标记用户为已验证
-                self.verify_states[state_key] = {
-                    "status": "verified",
-                    "verify_time": asyncio.get_event_loop().time()
-                }
-                skip_verify = True
+            # 优先检查 new_chat_members（复数），支持多个用户同时入群
+            new_members = self._get_raw_value(raw, "new_chat_members") or []
+            if new_members:
+                users = list(new_members)
             else:
-                logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}，将进入验证流程")
-                await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}级，将进入验证流程。")
+                # 回退到 new_chat_member（单数）
+                new_member = self._get_raw_value(raw, "new_chat_member") or {}
+                user = self._get_raw_value(new_member, "user") or {}
+                if user:
+                    users = [user]
+        else:
+            # QQ (aiocqhttp)
+            user_id = self._get_raw_value(raw, "user_id")
+            if user_id:
+                users = [{"id": user_id}]
         
-        # Telegram 平台直接进入验证流程（跳过等级验证）
-        if platform == "telegram":
-            logger.info(f"[Geetest Verify] 用户 {uid} 在 Telegram 群 {gid} 入群，直接进入验证流程")
-        
-        if skip_verify:
+        if not users:
+            logger.warning(f"[Geetest Verify] 无法获取新成员信息")
             return
         
-        # 存储用户的入群验证信息
-        question, answer = self._generate_math_problem()
+        logger.info(f"[Geetest Verify] 检测到 {len(users)} 个新成员入群")
         
-        logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
-        
-        # 延时发送验证消息
-        if group_config["verify_delay"] > 0:
-            logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {group_config['verify_delay']} 秒后发送验证消息")
-            await asyncio.sleep(group_config['verify_delay'])
-        
-        await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True, group_config=group_config)
+        # 处理每个新成员
+        for user in users:
+            if platform == "telegram":
+                uid = str(self._get_raw_value(user, "id"))
+            else:
+                uid = str(user.get("id"))
+            
+            state_key = f"{gid}:{uid}"
+            
+            # 检查群是否开启了验证
+            group_config = self._get_group_config(gid)
+            if not group_config["enabled"]:
+                return
+            
+            # 检查用户是否已被标记为绕过验证
+            if state_key in self.verify_states and self.verify_states[state_key].get("status") == "bypassed":
+                logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已标记为绕过验证，跳过验证流程")
+                continue
+            
+            # 检查用户是否已验证过
+            if state_key in self.verify_states and self.verify_states[state_key].get("status") == "verified":
+                logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已验证过，跳过验证流程")
+                continue
+
+            # 获取群级别配置
+            group_config = self._get_group_config(gid)
+            
+            # 延时2秒
+            await asyncio.sleep(2)
+            
+            # 格式化用户提及
+            at_user = self._format_user_mention(event, uid)
+            skip_verify = False
+            
+            # 检查是否启用了等级验证（仅 QQ 平台支持，Telegram 没有等级系统）
+            if platform == "aiocqhttp" and group_config["enable_level_verify"]:
+                qq_level = await self._get_user_level(uid)
+                if qq_level >= group_config["min_qq_level"]:
+                    logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
+                    await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。\n欢迎你的加入！")
+                    # 标记用户为已验证
+                    self.verify_states[state_key] = {
+                        "status": "verified",
+                        "verify_time": asyncio.get_event_loop().time()
+                    }
+                    skip_verify = True
+                else:
+                    logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}，将进入验证流程")
+                    await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}级，将进入验证流程。")
+            
+            # Telegram 平台直接进入验证流程（跳过等级验证）
+            if platform == "telegram":
+                logger.info(f"[Geetest Verify] 用户 {uid} 在 Telegram 群 {gid} 入群，直接进入验证流程")
+            
+            if skip_verify:
+                continue
+            
+            # 存储用户的入群验证信息
+            question, answer = self._generate_math_problem()
+            
+            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
+            
+            # 延时发送验证消息
+            if group_config["verify_delay"] > 0:
+                logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {group_config['verify_delay']} 秒后发送验证消息")
+                await asyncio.sleep(group_config['verify_delay'])
+            
+            await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True, group_config=group_config)
 
     async def _start_verification_process(self, event: AstrMessageEvent, uid: str, gid: int, question: str, answer: int, is_new_member: bool, group_config: dict = None):
         """为用户启动或重启验证流程"""
@@ -1015,15 +1079,17 @@ class GroupGeetestVerifyPlugin(Star):
         
         if platform == "telegram":
             # Telegram 使用 entities 或回复消息来判断
-            entities = self._get_raw_value(raw, "entities") or []
-            reply_to_message = self._get_raw_value(raw, "reply_to_message") or {}
-            text = self._get_raw_value(raw, "text") or ""
+            # 注意：需要从 message 属性中获取
+            message_obj = self._get_raw_value(raw, "message") or {}
+            entities = self._get_raw_value(message_obj, "entities") or []
+            reply_to_message = self._get_raw_value(message_obj, "reply_to_message") or {}
+            text = self._get_raw_value(message_obj, "text") or ""
             
             logger.info(f"[Geetest Verify] Telegram entities: {entities}, reply_to_message: {bool(reply_to_message)}, text: {text}")
             
             # 如果是回复消息，使用回复消息的发送者
             if reply_to_message:
-                target_user = self._get_raw_value(reply_to_message, "user") or {}
+                target_user = self._get_raw_value(reply_to_message, "from") or {}
                 target_uid = str(self._get_raw_value(target_user, "id"))
                 logger.info(f"[Geetest Verify] 从回复消息获取到目标用户: {target_uid}")
             else:
@@ -1041,10 +1107,55 @@ class GroupGeetestVerifyPlugin(Star):
                         # mention 是 @username 类型，需要解析 username
                         mention_text = text[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
                         logger.info(f"[Geetest Verify] 找到 mention: {mention_text}")
-                        # 简化处理：暂时不支持从 @username 解析 user_id
-                        # 因为需要调用 getChat API 来获取 user_id
-                        # 这里提示用户使用回复功能
+                        # 尝试调用 Telegram API 获取用户信息
+                        try:
+                            username = mention_text.lstrip('@')
+                            platform_client = self.context.get_platform("telegram").get_client()
+                            if hasattr(platform_client, "call_action"):
+                                # 尝试多种方法获取用户信息
+                                logger.info(f"[Geetest Verify] 尝试获取用户 {username} 的信息")
+                                
+                                # 方法1: 尝试通过 getChatMember 遍历（不推荐，仅作测试）
+                                # 注意：这需要知道 user_id，所以我们不能使用
+                                
+                                # 方法2: 尝试使用 AstrBot 的其他 API
+                                # 让我们尝试调用 getChat
+                                try:
+                                    # 尝试通过 @username 获取用户信息
+                                    # Telegram Bot API 可能有一些未公开的方法
+                                    chat_info = await platform_client.call_action("getChat", chat_id=f"@{username}")
+                                    if chat_info:
+                                        target_uid = str(chat_info.get("id"))
+                                        logger.info(f"[Geetest Verify] 通过 getChat 获取到用户 ID: {target_uid}")
+                                except Exception as e1:
+                                    logger.debug(f"[Geetest Verify] getChat 方法失败: {e1}")
+                                
+                                # 方法3: 尝试使用 resolvePeer（如果支持）
+                                try:
+                                    peer_info = await platform_client.call_action("resolvePeer", username=username)
+                                    if peer_info:
+                                        peer_id = peer_info.get("peer", {}).get("user_id")
+                                        if peer_id:
+                                            target_uid = str(peer_id)
+                                            logger.info(f"[Geetest Verify] 通过 resolvePeer 获取到用户 ID: {target_uid}")
+                                except Exception as e2:
+                                    logger.debug(f"[Geetest Verify] resolvePeer 方法失败: {e2}")
+                                
+                        except Exception as e:
+                            logger.warning(f"[Geetest Verify] 从 Telegram API 获取用户信息失败: {e}")
                         break
+                
+                # 如果还是没找到，尝试从 event.message_str 中解析 @username
+                if not target_uid:
+                    logger.info(f"[Geetest Verify] 尝试从 event.message_str 中解析 @username")
+                    message_str = event.message_str
+                    # 使用正则表达式匹配 @username
+                    username_match = re.search(r'@([a-zA-Z0-9_]+)', message_str)
+                    if username_match:
+                        username = username_match.group(1)
+                        logger.info(f"[Geetest Verify] 从 message_str 中提取到 username: {username}")
+                        # 由于 Telegram Bot API 的限制，我们无法直接通过 username 获取 user_id
+                        logger.warning(f"[Geetest Verify] Telegram Bot API 不支持通过 username 直接获取 user_id，请使用回复功能")
         else:
             # QQ (aiocqhttp) 使用消息段判断
             message = self._get_raw_value(raw, "message") or []
@@ -1059,7 +1170,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 如果没有指定用户，提示用户
         if not target_uid:
             if platform == "telegram":
-                await self._send_group_message(event, gid, f"❎ 请回复需要重新验证的用户的消息，或点击用户头像后使用命令。")
+                await self._send_group_message(event, gid, f"❎ 无法从 @username 获取用户信息。请回复需要重新验证的用户的消息，然后使用此命令。")
             else:
                 await self._send_group_message(event, gid, f"❎ 请@需要重新验证的用户。")
             return
@@ -1114,13 +1225,15 @@ class GroupGeetestVerifyPlugin(Star):
         
         if platform == "telegram":
             # Telegram 使用 entities 或回复消息来判断
-            entities = self._get_raw_value(raw, "entities") or []
-            reply_to_message = self._get_raw_value(raw, "reply_to_message") or {}
-            text = self._get_raw_value(raw, "text") or ""
+            # 注意：需要从 message 属性中获取
+            message_obj = self._get_raw_value(raw, "message") or {}
+            entities = self._get_raw_value(message_obj, "entities") or []
+            reply_to_message = self._get_raw_value(message_obj, "reply_to_message") or {}
+            text = self._get_raw_value(message_obj, "text") or ""
             
             # 如果是回复消息，使用回复消息的发送者
             if reply_to_message:
-                target_user = self._get_raw_value(reply_to_message, "user") or {}
+                target_user = self._get_raw_value(reply_to_message, "from") or {}
                 target_uid = str(self._get_raw_value(target_user, "id"))
             else:
                 # 检查 entities 中的 mention
@@ -1134,10 +1247,40 @@ class GroupGeetestVerifyPlugin(Star):
                     elif entity_type == "mention":
                         # mention 是 @username 类型，需要解析 username
                         mention_text = text[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
-                        # 简化处理：暂时不支持从 @username 解析 user_id
-                        # 因为需要调用 getChat API 来获取 user_id
-                        # 这里提示用户使用回复功能
+                        # 调用 Telegram API 获取用户信息
+                        try:
+                            username = mention_text.lstrip('@')
+                            platform_client = self.context.get_platform("telegram").get_client()
+                            if hasattr(platform_client, "call_action"):
+                                chat_member = await platform_client.call_action("getChatMember", chat_id=gid, username=username)
+                                if chat_member:
+                                    user_info = chat_member.get("user", {})
+                                    target_uid = str(user_info.get("id"))
+                                    logger.info(f"[Geetest Verify] 从 Telegram API 获取到目标用户: {target_uid}")
+                        except Exception as e:
+                            logger.warning(f"[Geetest Verify] 从 Telegram API 获取用户信息失败: {e}")
                         break
+                
+                # 如果还是没找到，尝试从 event.message_str 中解析 @username
+                if not target_uid:
+                    logger.info(f"[Geetest Verify] 尝试从 event.message_str 中解析 @username")
+                    message_str = event.message_str
+                    # 使用正则表达式匹配 @username
+                    username_match = re.search(r'@([a-zA-Z0-9_]+)', message_str)
+                    if username_match:
+                        username = username_match.group(1)
+                        logger.info(f"[Geetest Verify] 从 message_str 中提取到 username: {username}")
+                        # 调用 Telegram API 获取用户信息
+                        try:
+                            platform_client = self.context.get_platform("telegram").get_client()
+                            if hasattr(platform_client, "call_action"):
+                                chat_member = await platform_client.call_action("getChatMember", chat_id=gid, username=username)
+                                if chat_member:
+                                    user_info = chat_member.get("user", {})
+                                    target_uid = str(user_info.get("id"))
+                                    logger.info(f"[Geetest Verify] 从 Telegram API 获取到目标用户: {target_uid}")
+                        except Exception as e:
+                            logger.warning(f"[Geetest Verify] 从 Telegram API 获取用户信息失败: {e}")
         else:
             # QQ (aiocqhttp) 使用消息段判断
             message = self._get_raw_value(raw, "message") or []

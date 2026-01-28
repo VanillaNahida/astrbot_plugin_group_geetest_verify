@@ -15,6 +15,7 @@ from astrbot.core.config.default import VERSION
 @register(
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）",
+    "不穿胖次の小奶猫（NyaNyagulugulu）",
     "QQ群和Telegram群极验验证插件",
     "1.2.0"
 )
@@ -987,11 +988,15 @@ class GroupGeetestVerifyPlugin(Star):
         raw = event.message_obj.raw_message
         uid = str(event.get_sender_id())
         
+        logger.info(f"[Geetest Verify] 收到重新验证命令，平台: {platform}, 用户: {uid}")
+        
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
             logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过重新验证命令")
             return
+        
+        logger.info(f"[Geetest Verify] 群组 ID: {gid}")
         
         # 检查用户权限
         if not await self._check_permission(event):
@@ -1012,21 +1017,33 @@ class GroupGeetestVerifyPlugin(Star):
             # Telegram 使用 entities 或回复消息来判断
             entities = self._get_raw_value(raw, "entities") or []
             reply_to_message = self._get_raw_value(raw, "reply_to_message") or {}
+            text = self._get_raw_value(raw, "text") or ""
+            
+            logger.info(f"[Geetest Verify] Telegram entities: {entities}, reply_to_message: {bool(reply_to_message)}, text: {text}")
             
             # 如果是回复消息，使用回复消息的发送者
             if reply_to_message:
                 target_user = self._get_raw_value(reply_to_message, "user") or {}
                 target_uid = str(self._get_raw_value(target_user, "id"))
+                logger.info(f"[Geetest Verify] 从回复消息获取到目标用户: {target_uid}")
             else:
                 # 检查 entities 中的 mention
                 for entity in entities:
-                    if self._get_raw_value(entity, "type") == "mention":
-                        mention_text = (self._get_raw_value(raw, "text") or "")[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
-                        # 这里简化处理，实际应该从消息中解析 username
-                        break
-                    elif self._get_raw_value(entity, "type") == "text_mention":
+                    entity_type = self._get_raw_value(entity, "type")
+                    logger.info(f"[Geetest Verify] 处理 entity，类型: {entity_type}")
+                    if entity_type == "text_mention":
+                        # text_mention 带有 user 信息
                         target_user = self._get_raw_value(entity, "user") or {}
                         target_uid = str(self._get_raw_value(target_user, "id"))
+                        logger.info(f"[Geetest Verify] 从 text_mention 获取到目标用户: {target_uid}")
+                        break
+                    elif entity_type == "mention":
+                        # mention 是 @username 类型，需要解析 username
+                        mention_text = text[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
+                        logger.info(f"[Geetest Verify] 找到 mention: {mention_text}")
+                        # 简化处理：暂时不支持从 @username 解析 user_id
+                        # 因为需要调用 getChat API 来获取 user_id
+                        # 这里提示用户使用回复功能
                         break
         else:
             # QQ (aiocqhttp) 使用消息段判断
@@ -1037,9 +1054,14 @@ class GroupGeetestVerifyPlugin(Star):
                     target_uid = str(self._get_raw_value(data, "qq"))
                     break
         
+        logger.info(f"[Geetest Verify] 目标用户 ID: {target_uid}")
+        
         # 如果没有指定用户，提示用户
         if not target_uid:
-            await self._send_group_message(event, gid, f"❎ 请回复或@需要重新验证的用户。")
+            if platform == "telegram":
+                await self._send_group_message(event, gid, f"❎ 请回复需要重新验证的用户的消息，或点击用户头像后使用命令。")
+            else:
+                await self._send_group_message(event, gid, f"❎ 请@需要重新验证的用户。")
             return
         
         # 清除用户的验证状态
@@ -1094,6 +1116,7 @@ class GroupGeetestVerifyPlugin(Star):
             # Telegram 使用 entities 或回复消息来判断
             entities = self._get_raw_value(raw, "entities") or []
             reply_to_message = self._get_raw_value(raw, "reply_to_message") or {}
+            text = self._get_raw_value(raw, "text") or ""
             
             # 如果是回复消息，使用回复消息的发送者
             if reply_to_message:
@@ -1102,13 +1125,18 @@ class GroupGeetestVerifyPlugin(Star):
             else:
                 # 检查 entities 中的 mention
                 for entity in entities:
-                    if self._get_raw_value(entity, "type") == "mention":
-                        mention_text = (self._get_raw_value(raw, "text") or "")[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
-                        # 这里简化处理，实际应该从消息中解析 username
-                        break
-                    elif self._get_raw_value(entity, "type") == "text_mention":
+                    entity_type = self._get_raw_value(entity, "type")
+                    if entity_type == "text_mention":
+                        # text_mention 带有 user 信息
                         target_user = self._get_raw_value(entity, "user") or {}
                         target_uid = str(self._get_raw_value(target_user, "id"))
+                        break
+                    elif entity_type == "mention":
+                        # mention 是 @username 类型，需要解析 username
+                        mention_text = text[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
+                        # 简化处理：暂时不支持从 @username 解析 user_id
+                        # 因为需要调用 getChat API 来获取 user_id
+                        # 这里提示用户使用回复功能
                         break
         else:
             # QQ (aiocqhttp) 使用消息段判断
@@ -1120,7 +1148,10 @@ class GroupGeetestVerifyPlugin(Star):
                     break
         
         if not target_uid:
-            await self._send_group_message(event, gid, f"❎ 请回复或@需要绕过验证的用户")
+            if platform == "telegram":
+                await self._send_group_message(event, gid, f"❎ 请回复需要绕过验证的用户的消息，或点击用户头像后使用命令。")
+            else:
+                await self._send_group_message(event, gid, f"❎ 请@需要绕过验证的用户")
             return
         
         # 标记用户为绕过验证

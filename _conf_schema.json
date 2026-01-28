@@ -29,6 +29,12 @@
     "default": "{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}",
     "hint": "用户回答错误后发送的消息，之后会自动生成新问题。可用变量: {at_user}, {question}。"
   },
+  "error_verification": {
+    "description": "验证错误提示",
+    "type": "string",
+    "default": "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证",
+    "hint": "用户入群未验证时发送消息撤回提示。可用变量: {at_user}, {timeout} (分钟)。"
+  },
   "failure_message": {
     "description": "验证超时提示语",
     "type": "string",

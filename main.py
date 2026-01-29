@@ -16,8 +16,8 @@ from astrbot.core.config.default import VERSION
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）",
     "不穿胖次の小奶猫（NyaNyagulugulu）",
-    "QQ群和Telegram群极验验证插件",
-    "1.2.0"
+    "入群网页验证插件",
+    "1.1.9"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -1314,7 +1314,7 @@ class GroupGeetestVerifyPlugin(Star):
         logger.info(f"[Geetest Verify] 用户 {target_uid} 已标记为绕过验证")
         
         at_target_user = self._format_user_mention(event, target_uid)
-        await self._send_group_message(event, gid, f"✅ 已允许 {at_target_user} 绕过验证")
+        await self._send_group_message(event, gid, f"✅ 已允许 {at_target_user} 绕过验证\n欢迎你的加入！")
 
     @filter.command("开启验证")
     async def enable_verify_command(self, event: AstrMessageEvent):

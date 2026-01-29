@@ -14,10 +14,9 @@ from astrbot.core.config.default import VERSION
 
 @register(
     "group_geetest_verify",
-    "香草味的纳西妲喵（VanillaNahida）",
-    "不穿胖次の小奶猫（NyaNyagulugulu）",
+    "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "1.1.9"
+    "v1.2.1"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -53,6 +52,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.min_qq_level = self.config.get("min_qq_level", schema_defaults.get("min_qq_level", 20))
             self.verify_delay = self.config.get("verify_delay", schema_defaults.get("verify_delay", 0))
             self.error_verification = self.config.get("error_verification", schema_defaults.get("error_verification", "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证"))
+            self.recall_unverified_messages = self.config.get("recall_unverified_messages", schema_defaults.get("recall_unverified_messages", False))
             self.group_configs = self.config.get("group_configs", [])
         except Exception:
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
@@ -78,6 +78,7 @@ class GroupGeetestVerifyPlugin(Star):
             self.config["min_qq_level"] = self.min_qq_level
             self.config["verify_delay"] = self.verify_delay
             self.config["error_verification"] = self.error_verification
+            self.config["recall_unverified_messages"] = self.recall_unverified_messages
             self.config["group_configs"] = self.group_configs
             # 保存到磁盘
             self.config.save_config()
@@ -155,7 +156,8 @@ class GroupGeetestVerifyPlugin(Star):
                     "enable_level_verify": group_config.get("enable_level_verify", self.enable_level_verify),
                     "min_qq_level": group_config.get("min_qq_level", self.min_qq_level),
                     "verify_delay": group_config.get("verify_delay", self.verify_delay),
-                    "error_verification": group_config.get("error_verification", self.error_verification)
+                    "error_verification": group_config.get("error_verification", self.error_verification),
+                    "recall_unverified_messages": group_config.get("recall_unverified_messages", self.recall_unverified_messages)
                 }
         
         # 没有找到群级别配置，返回默认配置
@@ -167,7 +169,8 @@ class GroupGeetestVerifyPlugin(Star):
             "enable_level_verify": self.enable_level_verify,
             "min_qq_level": self.min_qq_level,
             "verify_delay": self.verify_delay,
-            "error_verification": self.error_verification
+            "error_verification": self.error_verification,
+            "recall_unverified_messages": self.recall_unverified_messages
         }
 
     async def cleanup(self):
@@ -730,16 +733,18 @@ class GroupGeetestVerifyPlugin(Star):
             except (ValueError, TypeError):
                 pass
         
-        # 如果不是验证答案，才撤回并提示
+        # 如果不是验证答案，检查是否需要撤回并提示
         if not is_verification_answer:
-            # 撤回未验证用户的消息
-            try:
-                message_id = raw.get("message_id")
-                if message_id:
-                    await event.bot.api.call_action("delete_msg", message_id=message_id)
-                    logger.info(f"已撤回未验证用户 {uid} 在群 {gid} 的消息")
-            except Exception as e:
-                logger.warning(f"撤回消息失败: {e}")
+            # 检查是否启用了撤回未验证用户消息功能
+            if group_config.get("recall_unverified_messages", False):
+                # 撤回未验证用户的消息
+                try:
+                    message_id = raw.get("message_id")
+                    if message_id:
+                        await event.bot.api.call_action("delete_msg", message_id=message_id)
+                        logger.info(f"已撤回未验证用户 {uid} 在群 {gid} 的消息")
+                except Exception as e:
+                    logger.warning(f"撤回消息失败: {e}")
             
             # 发送验证提示消息
             try:

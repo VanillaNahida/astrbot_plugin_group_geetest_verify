@@ -139,6 +139,12 @@
             "default": false,
             "hint": "是否启用等级验证。如果启用，QQ等级大于等于最低等级的用户将自动跳过验证。"
           },
+          "recall_unverified_messages": {
+            "description": "是否撤回未验证用户的非验证码消息",
+            "type": "bool",
+            "default": false,
+            "hint": "如果启用，将撤回未验证用户发送的非验证码消息。默认关闭。"
+          },
           "min_qq_level": {
             "description": "最低QQ等级",
             "type": "int",

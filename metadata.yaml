@@ -1,6 +1,9 @@
 name: astrbot_plugin_group_geetest_verfy # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
 display_name: 入群网页验证插件 # 用于展示的名字，可以是方便人类阅读的名字
 desc: QQ群群聊入群网页验证插件，使用极验Geetest V4实现入群人机验证。 # 插件简短描述
-version: v1.2.2 # 插件版本号。
+version: v1.2.3 # 插件版本号。
 author: 香草味的纳西妲喵（VanillaNahida） # 作者
 repo: https://github.com/VanillaNahida/astrbot_plugin_group_geetest_verify # 插件的仓库地址
+support_platforms: # 仅支持 aiocqhttp 平台
+ - aiocqhttp 
+astrbot_version: ">=4.10.6,<5" # 适配的 AstrBot 版本范围，使用语义化版本号格式

@@ -3,7 +3,7 @@ import json
 import os
 import random
 import re
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 import aiohttp
 
 from astrbot.api import logger
@@ -16,7 +16,7 @@ from astrbot.core.config.default import VERSION
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.2.2"
+    "v1.2.3"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -176,7 +176,57 @@ class GroupGeetestVerifyPlugin(Star):
             "recall_unverified_messages": self.recall_unverified_messages,
             "prompt_unverified_user": self.prompt_unverified_user
         }
+    
+    async def initialize(self):
+        """实现异步的插件初始化方法，当加载并实例化该插件类之后会自动调用该方法。"""
+        logger.info("[Geetest Verify] 插件初始化中...")
+        
+        # 确保 aiohttp ClientSession 已创建
+        if not hasattr(self, 'session') or self.session.closed:
+            self.session = aiohttp.ClientSession()
+            logger.info("[Geetest Verify] 已创建 aiohttp ClientSession （用于请求验证服务器）")
+        
+        # 初始化验证状态管理
+        self.verify_states: Dict[str, Dict[str, Any]] = {}
+        
+        logger.info("[Geetest Verify] 插件初始化完成")
+        logger.info("[Geetest Verify] 全局配置：")
+        logger.info(f"[Geetest Verify] - API 基础 URL: {self.api_base_url if self.api_base_url else '未配置API地址'}")
+        logger.info(f"[Geetest Verify] - 验证超时时间: {self.verification_timeout} 秒")
+        logger.info(f"[Geetest Verify] - 最大错误回答次数: {self.max_wrong_answers} 次")
+        logger.info(f"[Geetest Verify] - 极验验证: {'已启用' if self.enable_geetest_verify else '未启用'}")
+        logger.info(f"[Geetest Verify] - 等级验证: {'已启用' if self.enable_level_verify else '未启用'}")
+        logger.info(f"[Geetest Verify] - 已配置群数量: {len(self.group_configs)}")
 
+    async def terminate(self):
+        """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        logger.info("[Geetest Verify] 插件正在卸载...")
+        
+        # 取消所有正在进行的验证任务
+        cancelled_count = 0
+        for state in self.verify_states.values():
+            task = state.get("task")
+            if task and not task.done():
+                task.cancel()
+                cancelled_count += 1
+        
+        if cancelled_count > 0:
+            logger.info(f"[Geetest Verify] 已取消 {cancelled_count} 个正在进行的验证任务")
+        
+        # 清理验证状态
+        self.verify_states.clear()
+        
+        # 关闭 aiohttp session
+        await self.cleanup()
+        
+        # 保存配置
+        try:
+            self._save_config()
+        except Exception as e:
+            logger.warning(f"[Geetest Verify] 保存配置失败: {e}")
+        
+        logger.info("[Geetest Verify] 插件已成功卸载")
+        
     async def cleanup(self):
         """清理资源，关闭 aiohttp session"""
         if hasattr(self, 'session') and not self.session.closed:
@@ -290,11 +340,7 @@ class GroupGeetestVerifyPlugin(Star):
     
     def _get_group_id(self, platform: str, raw) -> int:
         """安全地获取群组 ID"""
-        if platform == "telegram":
-            # Telegram 的群组 ID 可能在不同的位置
-            # 尝试从多个可能的路径获取
-            raw_dict = self._get_raw_dict(raw) if raw else {}
-            
+        if platform == "telegram":            
             # 尝试直接从 chat 获取
             chat = self._get_raw_value(raw, "chat") or {}
             if chat:
@@ -334,7 +380,7 @@ class GroupGeetestVerifyPlugin(Star):
             if group_id:
                 logger.debug(f"[Geetest Verify] 获取到 QQ 群组 ID: {group_id}")
                 return int(group_id)
-            logger.warning(f"[Geetest Verify] 无法从 QQ 消息中获取群组 ID")
+            logger.warning("[Geetest Verify] 无法从 QQ 消息中获取群组 ID")
             return None
     
     def _format_user_mention(self, event: AstrMessageEvent, uid: str) -> str:
@@ -462,12 +508,12 @@ class GroupGeetestVerifyPlugin(Star):
             
             # 处理重新验证命令
             if command == "重新验证" or command == "reverify" or command == "rv":
-                logger.info(f"[Geetest Verify] 手动触发重新验证命令")
+                logger.info("[Geetest Verify] 手动触发重新验证命令")
                 await self.reverify_command(event)
                 return
             # 处理绕过验证命令
             elif command == "绕过验证" or command == "bypass":
-                logger.info(f"[Geetest Verify] 手动触发绕过验证命令")
+                logger.info("[Geetest Verify] 手动触发绕过验证命令")
                 await self.bypass_command(event)
                 return
             # 其他命令由命令处理器处理
@@ -478,7 +524,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID 并验证
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过事件处理")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过事件处理")
             return
         
         # 处理 Telegram 平台的群事件
@@ -487,19 +533,19 @@ class GroupGeetestVerifyPlugin(Star):
             logger.info(f"[Geetest Verify] Telegram 群事件 - new_chat_member: {bool(self._get_raw_value(raw, 'new_chat_member'))}, left_chat_member: {bool(self._get_raw_value(raw, 'left_chat_member'))}, text: {self._get_raw_value(raw, 'text')}, message_id: {self._get_raw_value(raw, 'message_id')}")
             
             if self._get_raw_value(raw, "new_chat_member"):
-                logger.info(f"[Geetest Verify] 检测到新成员入群事件 (new_chat_member)")
+                logger.info("[Geetest Verify] 检测到新成员入群事件 (new_chat_member)")
                 await self._process_new_member(event)
             elif self._get_raw_value(raw, "new_chat_members"):
-                logger.info(f"[Geetest Verify] 检测到新成员入群事件 (new_chat_members)")
+                logger.info("[Geetest Verify] 检测到新成员入群事件 (new_chat_members)")
                 await self._process_new_member(event)
             elif self._get_raw_value(raw, "left_chat_member"):
-                logger.info(f"[Geetest Verify] 检测到成员退群事件")
+                logger.info("[Geetest Verify] 检测到成员退群事件")
                 await self._process_member_decrease(event)
             elif self._get_raw_value(raw, "text") or self._get_raw_value(raw, "message_id"):
-                logger.info(f"[Geetest Verify] 检测到群消息事件")
+                logger.info("[Geetest Verify] 检测到群消息事件")
                 await self._process_verification_message(event)
             else:
-                logger.info(f"[Geetest Verify] 未识别的 Telegram 事件类型")
+                logger.info("[Geetest Verify] 未识别的 Telegram 事件类型")
         # 处理 OneBot (aiocqhttp) 平台的群事件
         elif platform == "aiocqhttp":
             post_type = self._get_raw_value(raw, "post_type")
@@ -519,7 +565,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过新成员处理")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过新成员处理")
             return
         
         # 根据平台获取用户 ID 列表
@@ -542,7 +588,7 @@ class GroupGeetestVerifyPlugin(Star):
                 users = [{"id": user_id}]
         
         if not users:
-            logger.warning(f"[Geetest Verify] 无法获取新成员信息")
+            logger.warning("[Geetest Verify] 无法获取新成员信息")
             return
         
         logger.info(f"[Geetest Verify] 检测到 {len(users)} 个新成员入群")
@@ -698,7 +744,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过验证消息处理")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过验证消息处理")
             return
         
         state_key = f"{gid}:{uid}"
@@ -777,7 +823,6 @@ class GroupGeetestVerifyPlugin(Star):
                 # 发送简单的错误提示
                 try:
                     at_user = f"[CQ:at,qq={uid}]"
-                    remaining_attempts = group_config["max_wrong_answers"] - wrong_count
                     error_msg = f"{at_user} 验证码错误！"
                     # error_msg = f"{at_user} 验证码错误！剩余尝试次数：{remaining_attempts}"
                     await event.bot.api.call_action("send_group_msg", group_id=gid, message=error_msg)
@@ -935,7 +980,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过退群处理")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过退群处理")
             return
         
         # 根据平台获取用户 ID
@@ -1127,7 +1172,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过重新验证命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过重新验证命令")
             return
         
         logger.info(f"[Geetest Verify] 群组 ID: {gid}")
@@ -1141,7 +1186,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 检查群是否开启了验证
         group_config = self._get_group_config(gid)
         if not group_config["enabled"]:
-            await self._send_group_message(event, gid, f"当前群未开启验证哦~")
+            await self._send_group_message(event, gid, "当前群未开启验证哦~")
             return
         
         # 检查是否有权限（这里简单判断是否@了其他用户）
@@ -1217,7 +1262,7 @@ class GroupGeetestVerifyPlugin(Star):
                 
                 # 如果还是没找到，尝试从 event.message_str 中解析 @username
                 if not target_uid:
-                    logger.info(f"[Geetest Verify] 尝试从 event.message_str 中解析 @username")
+                    logger.info("[Geetest Verify] 尝试从 event.message_str 中解析 @username")
                     message_str = event.message_str
                     # 使用正则表达式匹配 @username
                     username_match = re.search(r'@([a-zA-Z0-9_]+)', message_str)
@@ -1225,7 +1270,7 @@ class GroupGeetestVerifyPlugin(Star):
                         username = username_match.group(1)
                         logger.info(f"[Geetest Verify] 从 message_str 中提取到 username: {username}")
                         # 由于 Telegram Bot API 的限制，我们无法直接通过 username 获取 user_id
-                        logger.warning(f"[Geetest Verify] Telegram Bot API 不支持通过 username 直接获取 user_id，请使用回复功能")
+                        logger.warning("[Geetest Verify] Telegram Bot API 不支持通过 username 直接获取 user_id，请使用回复功能")
         else:
             # QQ (aiocqhttp) 使用消息段判断
             message = self._get_raw_value(raw, "message") or []
@@ -1240,9 +1285,9 @@ class GroupGeetestVerifyPlugin(Star):
         # 如果没有指定用户，提示用户
         if not target_uid:
             if platform == "telegram":
-                await self._send_group_message(event, gid, f"❎ 无法从 @username 获取用户信息。请回复需要重新验证的用户的消息，然后使用此命令。")
+                await self._send_group_message(event, gid, "❎ 无法从 @username 获取用户信息。请回复需要重新验证的用户的消息，然后使用此命令。")
             else:
-                await self._send_group_message(event, gid, f"❎ 请@需要重新验证的用户。")
+                await self._send_group_message(event, gid, "❎ 请@需要重新验证的用户。")
             return
         
         # 清除用户的验证状态
@@ -1264,6 +1309,8 @@ class GroupGeetestVerifyPlugin(Star):
         
         at_target_user = self._format_user_mention(event, target_uid)
         await self._send_group_message(event, gid, f"✅ 已要求 {at_target_user} 重新验证")
+        
+        event.stop_event()
 
     @filter.command("绕过验证")
     async def bypass_command(self, event: AstrMessageEvent):
@@ -1275,7 +1322,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过绕过验证命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过绕过验证命令")
             return
         
         # 检查用户权限
@@ -1287,7 +1334,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 检查群是否开启了验证
         group_config = self._get_group_config(gid)
         if not group_config["enabled"]:
-            await self._send_group_message(event, gid, f"❎ 当前群未开启验证哦~")
+            await self._send_group_message(event, gid, "❎ 当前群未开启验证哦~")
             return
         
         # 检查是否有权限（这里简单判断是否@了其他用户）
@@ -1333,7 +1380,7 @@ class GroupGeetestVerifyPlugin(Star):
                 
                 # 如果还是没找到，尝试从 event.message_str 中解析 @username
                 if not target_uid:
-                    logger.info(f"[Geetest Verify] 尝试从 event.message_str 中解析 @username")
+                    logger.info("[Geetest Verify] 尝试从 event.message_str 中解析 @username")
                     message_str = event.message_str
                     # 使用正则表达式匹配 @username
                     username_match = re.search(r'@([a-zA-Z0-9_]+)', message_str)
@@ -1362,9 +1409,9 @@ class GroupGeetestVerifyPlugin(Star):
         
         if not target_uid:
             if platform == "telegram":
-                await self._send_group_message(event, gid, f"❎ 请回复需要绕过验证的用户的消息，或点击用户头像后使用命令。")
+                await self._send_group_message(event, gid, "❎ 请回复需要绕过验证的用户的消息，或点击用户头像后使用命令。")
             else:
-                await self._send_group_message(event, gid, f"❎ 请@需要绕过验证的用户")
+                await self._send_group_message(event, gid, "❎ 请@需要绕过验证的用户")
             return
         
         # 标记用户为绕过验证
@@ -1385,6 +1432,8 @@ class GroupGeetestVerifyPlugin(Star):
         
         at_target_user = self._format_user_mention(event, target_uid)
         await self._send_group_message(event, gid, f"✅ 已允许 {at_target_user} 绕过验证\n欢迎你的加入！")
+        
+        event.stop_event()
 
     @filter.command("开启验证")
     async def enable_verify_command(self, event: AstrMessageEvent):
@@ -1396,7 +1445,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过开启验证命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过开启验证命令")
             return
         
         # 检查用户权限
@@ -1410,7 +1459,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查是否已开启
         if group_config["enabled"]:
-            await self._send_group_message(event, gid, f"✅ 本群验证已处于开启状态")
+            await self._send_group_message(event, gid, "✅ 本群验证已处于开启状态")
             return
         
         # 更新群级别配置
@@ -1419,8 +1468,10 @@ class GroupGeetestVerifyPlugin(Star):
         # 同时更新内存状态（兼容旧版本）
         self.verify_states[f"group_{gid}_enabled"] = {"enabled": True}
         
-        await self._send_group_message(event, gid, f"✅ 已开启本群验证")
+        await self._send_group_message(event, gid, "✅ 已开启本群验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已开启验证")
+        
+        event.stop_event()
 
     @filter.command("关闭验证")
     async def disable_verify_command(self, event: AstrMessageEvent):
@@ -1432,7 +1483,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过关闭验证命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过关闭验证命令")
             return
         
         # 检查用户权限
@@ -1446,7 +1497,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查是否已关闭
         if not group_config["enabled"]:
-            await self._send_group_message(event, gid, f"❎ 本群暂未开启验证")
+            await self._send_group_message(event, gid, "❎ 本群暂未开启验证")
             return
         
         # 更新群级别配置
@@ -1455,8 +1506,10 @@ class GroupGeetestVerifyPlugin(Star):
         # 同时更新内存状态（兼容旧版本）
         self.verify_states[f"group_{gid}_enabled"] = {"enabled": False}
         
-        await self._send_group_message(event, gid, f"✅ 已关闭本群验证")
+        await self._send_group_message(event, gid, "✅ 已关闭本群验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已关闭验证")
+        
+        event.stop_event()
 
     @filter.command("设置验证超时时间")
     async def set_timeout_command(self, event: AstrMessageEvent):
@@ -1468,7 +1521,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过设置超时命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过设置超时命令")
             return
         
         # 检查用户权限
@@ -1481,7 +1534,7 @@ class GroupGeetestVerifyPlugin(Star):
         text = event.message_str
         match = re.search(r'(\d+)', text)
         if not match:
-            await self._send_group_message(event, gid, f"❎ 请输入正确的时间（秒）")
+            await self._send_group_message(event, gid, "❎ 请输入正确的时间（秒）")
             return
         
         timeout = int(match.group(1))
@@ -1492,9 +1545,11 @@ class GroupGeetestVerifyPlugin(Star):
         await self._send_group_message(event, gid, f"✅ 已将本群验证超时时间设置为 {timeout} 秒")
         
         if timeout < 60:
-            await self._send_group_message(event, gid, f"你给的时间太少了，建议至少一分钟(60秒)哦ε(*´･ω･)з")
+            await self._send_group_message(event, gid, "你给的时间太少了，建议至少一分钟(60秒)哦ε(*´･ω･)з")
         
         logger.info(f"[Geetest Verify] 群 {gid} 验证超时时间设置为 {timeout} 秒")
+        
+        event.stop_event()
 
     @filter.command("开启等级验证")
     async def enable_level_verify_command(self, event: AstrMessageEvent):
@@ -1506,7 +1561,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过开启等级验证命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过开启等级验证命令")
             return
         
         # Telegram 平台不支持等级验证
@@ -1526,7 +1581,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查是否已开启
         if group_config["enable_level_verify"]:
-            await self._send_group_message(event, gid, f"❎ 本群等级验证已处于开启状态")
+            await self._send_group_message(event, gid, "❎ 本群等级验证已处于开启状态")
             return
         
         # 开启等级验证
@@ -1534,6 +1589,8 @@ class GroupGeetestVerifyPlugin(Star):
         
         await self._send_group_message(event, gid, f"✅ 已开启本群等级验证，QQ等级大于等于 {group_config['min_qq_level']} 级的用户将自动跳过验证。")
         logger.info(f"[Geetest Verify] 群 {gid} 已开启等级验证")
+        
+        event.stop_event()
 
     @filter.command("关闭等级验证")
     async def disable_level_verify_command(self, event: AstrMessageEvent):
@@ -1545,7 +1602,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过关闭等级验证命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过关闭等级验证命令")
             return
         
         # Telegram 平台不支持等级验证
@@ -1565,14 +1622,16 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查是否已关闭
         if not group_config["enable_level_verify"]:
-            await self._send_group_message(event, gid, f"❎ 本群等级验证暂未开启")
+            await self._send_group_message(event, gid, "❎ 本群等级验证暂未开启")
             return
         
         # 关闭等级验证
         self._update_group_config(gid, enable_level_verify=False)
         
-        await self._send_group_message(event, gid, f"✅ 已关闭本群等级验证")
+        await self._send_group_message(event, gid, "✅ 已关闭本群等级验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已关闭等级验证")
+        
+        event.stop_event()
 
     @filter.command("设置最低验证等级")
     async def set_min_level_command(self, event: AstrMessageEvent):
@@ -1584,7 +1643,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过设置最低等级命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过设置最低等级命令")
             return
         
         # Telegram 平台不支持等级验证
@@ -1603,14 +1662,14 @@ class GroupGeetestVerifyPlugin(Star):
         text = event.message_str
         match = re.search(r'(\d+)', text)
         if not match:
-            await self._send_group_message(event, gid, f"❎ 请输入正确的等级（0-64）")
+            await self._send_group_message(event, gid, "❎ 请输入正确的等级（0-64）")
             return
         
         min_level = int(match.group(1))
         
         # 验证等级范围
         if min_level < 0 or min_level > 64:
-            await self._send_group_message(event, gid, f"❎ 等级必须在 0-64 之间")
+            await self._send_group_message(event, gid, "❎ 等级必须在 0-64 之间")
             return
         
         # 更新群级别配置
@@ -1618,6 +1677,8 @@ class GroupGeetestVerifyPlugin(Star):
         
         await self._send_group_message(event, gid, f"✅ 已将本群最低验证等级设置为 {min_level} 级")
         logger.info(f"[Geetest Verify] 群 {gid} 最低验证等级设置为 {min_level} 级")
+        
+        event.stop_event()
 
     async def _get_user_level(self, uid: str) -> int:
         """获取用户QQ等级"""
@@ -1652,7 +1713,7 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 检查是否是 Bot 管理员
         if event.is_admin():
-            logger.debug(f"用户为Bot管理员，跳过权限检查")
+            logger.debug("用户为Bot管理员，跳过权限检查")
             return True
         
         # 检查群权限（群主、管理员才可使用）
@@ -1661,7 +1722,7 @@ class GroupGeetestVerifyPlugin(Star):
             from_user = self._get_raw_value(raw_message, "from") or {}
             gid = self._get_group_id(platform, raw_message)
             if gid is None:
-                logger.warning(f"[Geetest Verify] 无法获取群组 ID，权限检查失败")
+                logger.warning("[Geetest Verify] 无法获取群组 ID，权限检查失败")
                 return False
             
             try:
@@ -1699,7 +1760,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 获取群组 ID
         gid = self._get_group_id(platform, raw)
         if gid is None:
-            logger.warning(f"[Geetest Verify] 无法获取群组 ID，跳过查看配置命令")
+            logger.warning("[Geetest Verify] 无法获取群组 ID，跳过查看配置命令")
             return
         
         # 检查用户权限
@@ -1752,3 +1813,5 @@ class GroupGeetestVerifyPlugin(Star):
         
         await self._send_group_message(event, gid, config_info)
         logger.info(f"[Geetest Verify] 群 {gid} 查看验证配置")
+        
+        event.stop_event()

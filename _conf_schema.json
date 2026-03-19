@@ -95,6 +95,18 @@
     "default": 3,
     "hint": "新成员入群后，延时多少秒再发送验证消息。设置为 0 表示立即发送。默认 3 秒。"
   },
+  "recall_unverified_messages": {
+    "description": "是否撤回未验证用户的非验证码消息",
+    "type": "bool",
+    "default": false,
+    "hint": "如果启用，将撤回未验证用户发送的非验证码消息。默认关闭。"
+  },
+  "prompt_unverified_user": {
+    "description": "是否提示用户完成验证",
+    "type": "bool",
+    "default": true,
+    "hint": "如果启用，用户未验证时发送消息将提醒用户完成验证，不增加验证错误计数；如果关闭，用户未验证时发送消息将增加验证错误计数，达到一定次数将被踢出群。默认开启。"
+  },
   "group_configs": {
     "description": "群级别配置",
     "type": "template_list",

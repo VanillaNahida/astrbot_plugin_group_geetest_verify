@@ -16,7 +16,7 @@ from astrbot.core.config.default import VERSION
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.2.3"
+    "v1.2.4"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -113,7 +113,9 @@ class GroupGeetestVerifyPlugin(Star):
                 "enable_geetest_verify": self.enable_geetest_verify,
                 "enable_level_verify": self.enable_level_verify,
                 "min_qq_level": self.min_qq_level,
-                "verify_delay": self.verify_delay
+                "verify_delay": self.verify_delay,
+                "recall_unverified_messages": self.recall_unverified_messages,
+                "prompt_unverified_user": self.prompt_unverified_user
             }
             self.group_configs.append(group_config)
         
@@ -124,7 +126,7 @@ class GroupGeetestVerifyPlugin(Star):
         # 确保配置项完整，如果某些字段缺失，使用默认值填充
         required_fields = ["__template_key", "group_id", "enabled", "verification_timeout", 
                           "kick_delay", "max_wrong_answers", "enable_geetest_verify", "enable_level_verify", 
-                          "min_qq_level", "verify_delay"]
+                          "min_qq_level", "verify_delay", "recall_unverified_messages", "prompt_unverified_user"]
         
         for field in required_fields:
             if field not in group_config:
@@ -146,6 +148,10 @@ class GroupGeetestVerifyPlugin(Star):
                     group_config[field] = self.min_qq_level
                 elif field == "verify_delay":
                     group_config[field] = self.verify_delay
+                elif field == "recall_unverified_messages":
+                    group_config[field] = self.recall_unverified_messages
+                elif field == "prompt_unverified_user":
+                    group_config[field] = self.prompt_unverified_user
         
         # 保存配置
         self._save_config()
@@ -226,12 +232,6 @@ class GroupGeetestVerifyPlugin(Star):
         
         # 关闭 aiohttp session
         await self.cleanup()
-        
-        # 保存配置
-        try:
-            self._save_config()
-        except Exception as e:
-            logger.warning(f"[Geetest Verify] 保存配置失败: {e}")
         
         logger.info("[Geetest Verify] 插件已成功卸载")
         

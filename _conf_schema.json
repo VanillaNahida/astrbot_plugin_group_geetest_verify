@@ -35,6 +35,18 @@
     "default": "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证",
     "hint": "用户入群未验证时发送消息撤回提示。可用变量: {at_user}, {timeout} (分钟)。"
   },
+  "recall_unverified_messages": {
+    "description": "是否撤回未验证用户的非验证码消息",
+    "type": "bool",
+    "default": false,
+    "hint": "如果启用，将撤回未验证用户发送的非验证码消息。默认关闭。"
+  },
+  "prompt_unverified_user": {
+    "description": "是否提示用户完成验证",
+    "type": "bool",
+    "default": true,
+    "hint": "如果启用，用户未验证时发送消息将提醒用户完成验证，不增加验证错误计数；如果关闭，用户未验证时发送消息将增加验证错误计数，达到一定次数将被踢出群。默认开启。"
+  },
   "failure_message": {
     "description": "验证超时提示语",
     "type": "string",

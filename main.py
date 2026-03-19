@@ -68,22 +68,18 @@ class GroupGeetestVerifyPlugin(Star):
             self.verify_delay = schema_defaults.get("verify_delay", 3)
             self.group_configs = []
 
+    def _sync_config_from_instance(self):
+        """从实例变量同步配置到配置字典（仅同步 group_configs）"""
+        try:
+            # 只同步 group_configs，根级配置由 AstrBot WebUI 管理
+            self.config["group_configs"] = self.group_configs
+        except Exception as e:
+            logger.error(f"[Geetest Verify] 同步配置失败: {e}")
+
     def _save_config(self):
         """保存配置到磁盘"""
         try:
-            # 更新配置字典
-            self.config["verification_timeout"] = self.verification_timeout
-            self.config["kick_delay"] = self.kick_delay
-            self.config["max_wrong_answers"] = self.max_wrong_answers
-            self.config["api_base_url"] = self.api_base_url
-            self.config["api_key"] = self.api_key
-            self.config["enable_geetest_verify"] = self.enable_geetest_verify
-            self.config["enable_level_verify"] = self.enable_level_verify
-            self.config["min_qq_level"] = self.min_qq_level
-            self.config["verify_delay"] = self.verify_delay
-            self.config["error_verification"] = self.error_verification
-            self.config["recall_unverified_messages"] = self.recall_unverified_messages
-            self.config["prompt_unverified_user"] = self.prompt_unverified_user
+            # 只保存 group_configs，根级配置由 AstrBot WebUI 管理
             self.config["group_configs"] = self.group_configs
             # 保存到磁盘
             self.config.save_config()

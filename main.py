@@ -16,7 +16,7 @@ from astrbot.core.config.default import VERSION
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.2.4"
+    "v1.2.5"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -638,6 +638,10 @@ class GroupGeetestVerifyPlugin(Star):
             # 检查是否启用了等级验证（仅 QQ 平台支持，Telegram 没有等级系统）
             if platform == "aiocqhttp" and group_config["enable_level_verify"]:
                 qq_level = await self._get_user_level(uid)
+                if qq_level == 0:
+                    message = f"{at_user} 未查询到您的QQ等级信息，请检查是否在隐私设置内开启等级显示，为了安全起见，将自动进入验证流程。"
+                else:
+                    message = f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}级，将进入验证流程。"
                 if qq_level >= group_config["min_qq_level"]:
                     logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
                     await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。\n欢迎你的加入！")
@@ -649,7 +653,7 @@ class GroupGeetestVerifyPlugin(Star):
                     skip_verify = True
                 else:
                     logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}，将进入验证流程")
-                    await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}级，将进入验证流程。")
+                    await self._send_group_message(event, gid, message)
             
             # Telegram 平台直接进入验证流程（跳过等级验证）
             if platform == "telegram":

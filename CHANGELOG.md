@@ -1,13 +1,17 @@
 # 更新日志 (CHANGELOG)
 
-## [v1.2.4] fix: 修复WebUI配置无法保存的bug
+## [v1.2.5] fix: QQ等级为0时提醒用户
 
-* 修复WebUI配置无法保存的bug
+fix: QQ等级为0时提醒用户
 
 <details>
 <summary>📋 点击查看历史更新日志</summary>
 
 # 历史更新
+
+## v1.2.4 
+
+* 修复WebUI配置无法保存的bug
 
 ## v1.2.3
 

@@ -11,12 +11,15 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config.default import VERSION
 
+# 插件版本号
+PLUGIN_VERSION = "1.2.6"
+
 
 @register(
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.2.5"
+    "v1.2.6"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -251,7 +254,7 @@ class GroupGeetestVerifyPlugin(Star):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"AstrBot/v{VERSION}"
+            "User-Agent": f"AstrBot/v{VERSION} group_geetest_verify/v{PLUGIN_VERSION}"
         }
         data = {
             "group_id": str(gid),
@@ -293,7 +296,7 @@ class GroupGeetestVerifyPlugin(Star):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"AstrBot/v{VERSION}"
+            "User-Agent": f"AstrBot/v{VERSION} group_geetest_verify/v{PLUGIN_VERSION}"
         }
         data = {
             "group_id": str(gid),

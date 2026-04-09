@@ -12,14 +12,14 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.config.default import VERSION
 
 # 插件版本号
-PLUGIN_VERSION = "1.2.6"
+PLUGIN_VERSION = "1.2.7"
 
 
 @register(
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.2.6"
+    "v1.2.7"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -504,7 +504,8 @@ class GroupGeetestVerifyPlugin(Star):
         raw = event.message_obj.raw_message
         
         # 调试：输出消息内容
-        logger.info(f"[Geetest Verify] 收到消息 - message_str: {event.message_str}, 原始类型: {type(raw)}")
+        logger.debug(f"[Geetest Verify] 收到消息 - message_str: {event.message_str}, 原始类型: {type(raw)}")
+        
         if platform == "telegram":
             message_obj = self._get_raw_value(raw, "message") or {}
             logger.info(f"[Geetest Verify] Telegram 消息 - text: {self._get_raw_value(message_obj, 'text')}, caption: {self._get_raw_value(message_obj, 'caption')}")

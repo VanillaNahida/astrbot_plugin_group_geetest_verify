@@ -15,14 +15,14 @@ from astrbot.core.config.default import VERSION
 from .data import VerifyStateDB
 
 # 插件版本号
-PLUGIN_VERSION = "1.2.7"
+PLUGIN_VERSION = "1.2.8"
 
 
 @register(
     "group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.2.7"
+    "v1.2.8"
 )
 class GroupGeetestVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -62,6 +62,22 @@ class GroupGeetestVerifyPlugin(Star):
             self.error_verification = self.config.get("error_verification", schema_defaults.get("error_verification", "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证"))
             self.recall_unverified_messages = self.config.get("recall_unverified_messages", schema_defaults.get("recall_unverified_messages", False))
             self.prompt_unverified_user = self.config.get("prompt_unverified_user", schema_defaults.get("prompt_unverified_user", True))
+            self.new_member_prompt = self.config.get("new_member_prompt", schema_defaults.get("new_member_prompt", "{at_user} 欢迎加入本群！请在 {timeout} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。"))
+            self.welcome_message = self.config.get("welcome_message", schema_defaults.get("welcome_message", "{at_user} 验证成功，欢迎你的加入！"))
+            self.wrong_answer_prompt = self.config.get("wrong_answer_prompt", schema_defaults.get("wrong_answer_prompt", "{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining}"))
+            self.failure_message = self.config.get("failure_message", schema_defaults.get("failure_message", "{at_user} 验证超时，你将在 {countdown} 秒后被请出本群。"))
+            self.kick_message = self.config.get("kick_message", schema_defaults.get("kick_message", "{at_user} 因未在规定时间内完成验证，已被请出本群。"))
+            self.too_many_wrong_message = self.config.get("too_many_wrong_message", schema_defaults.get("too_many_wrong_message", "{at_user} 很抱歉，你已连续回答错误 {count} 次，将被请出本群。"))
+            self.too_many_wrong_kick_message = self.config.get("too_many_wrong_kick_message", schema_defaults.get("too_many_wrong_kick_message", "{at_user} 因回答错误次数过多，已被请出本群。"))
+            self.wrong_code_message = self.config.get("wrong_code_message", schema_defaults.get("wrong_code_message", "{at_user} 验证码错误！"))
+            self.too_many_non_code_message = self.config.get("too_many_non_code_message", schema_defaults.get("too_many_non_code_message", "{at_user} 很抱歉，你已连续发送非验证码消息达到 {count} 次，将被请出本群。"))
+            self.geetest_new_member_prompt = self.config.get("geetest_new_member_prompt", schema_defaults.get("geetest_new_member_prompt", "{at_user} 欢迎加入本群！请在 {timeout} 分钟内复制下方链接前往浏览器完成人机验证：\n{url}\n验证完成后，请在群内发送六位数验证码。"))
+            self.geetest_wrong_code_prompt = self.config.get("geetest_wrong_code_prompt", schema_defaults.get("geetest_wrong_code_prompt", "{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining}"))
+            self.level_no_info_message = self.config.get("level_no_info_message", schema_defaults.get("level_no_info_message", "{at_user} 未查询到您的QQ等级信息，请检查是否在隐私设置内开启等级显示，为了安全起见，将自动进入验证流程。"))
+            self.level_too_low_message = self.config.get("level_too_low_message", schema_defaults.get("level_too_low_message", "{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {min_level}级，将进入验证流程。"))
+            self.level_pass_message = self.config.get("level_pass_message", schema_defaults.get("level_pass_message", "{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {min_level}级，已跳过验证流程。\n欢迎你的加入！"))
+            self.timeout_reminder_geetest = self.config.get("timeout_reminder_geetest", schema_defaults.get("timeout_reminder_geetest", "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{url}\n验证完成后，请在群内发送六位数验证码。"))
+            self.timeout_reminder_math = self.config.get("timeout_reminder_math", schema_defaults.get("timeout_reminder_math", "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请回答数学题：{question}"))
             self.group_configs = self.config.get("group_configs", [])
         except Exception:
             self.verification_timeout = schema_defaults.get("verification_timeout", 300)
@@ -73,6 +89,25 @@ class GroupGeetestVerifyPlugin(Star):
             self.enable_level_verify = schema_defaults.get("enable_level_verify", False)
             self.min_qq_level = schema_defaults.get("min_qq_level", 20)
             self.verify_delay = schema_defaults.get("verify_delay", 3)
+            self.error_verification = schema_defaults.get("error_verification", "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证")
+            self.recall_unverified_messages = schema_defaults.get("recall_unverified_messages", False)
+            self.prompt_unverified_user = schema_defaults.get("prompt_unverified_user", True)
+            self.new_member_prompt = schema_defaults.get("new_member_prompt", "{at_user} 欢迎加入本群！请在 {timeout} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。")
+            self.welcome_message = schema_defaults.get("welcome_message", "{at_user} 验证成功，欢迎你的加入！")
+            self.wrong_answer_prompt = schema_defaults.get("wrong_answer_prompt", "{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining}")
+            self.failure_message = schema_defaults.get("failure_message", "{at_user} 验证超时，你将在 {countdown} 秒后被请出本群。")
+            self.kick_message = schema_defaults.get("kick_message", "{at_user} 因未在规定时间内完成验证，已被请出本群。")
+            self.too_many_wrong_message = schema_defaults.get("too_many_wrong_message", "{at_user} 很抱歉，你已连续回答错误 {count} 次，将被请出本群。")
+            self.too_many_wrong_kick_message = schema_defaults.get("too_many_wrong_kick_message", "{at_user} 因回答错误次数过多，已被请出本群。")
+            self.wrong_code_message = schema_defaults.get("wrong_code_message", "{at_user} 验证码错误！")
+            self.too_many_non_code_message = schema_defaults.get("too_many_non_code_message", "{at_user} 很抱歉，你已连续发送非验证码消息达到 {count} 次，将被请出本群。")
+            self.geetest_new_member_prompt = schema_defaults.get("geetest_new_member_prompt", "{at_user} 欢迎加入本群！请在 {timeout} 分钟内复制下方链接前往浏览器完成人机验证：\n{url}\n验证完成后，请在群内发送六位数验证码。")
+            self.geetest_wrong_code_prompt = schema_defaults.get("geetest_wrong_code_prompt", "{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining}")
+            self.level_no_info_message = schema_defaults.get("level_no_info_message", "{at_user} 未查询到您的QQ等级信息，请检查是否在隐私设置内开启等级显示，为了安全起见，将自动进入验证流程。")
+            self.level_too_low_message = schema_defaults.get("level_too_low_message", "{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {min_level}级，将进入验证流程。")
+            self.level_pass_message = schema_defaults.get("level_pass_message", "{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {min_level}级，已跳过验证流程。\n欢迎你的加入！")
+            self.timeout_reminder_geetest = schema_defaults.get("timeout_reminder_geetest", "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{url}\n验证完成后，请在群内发送六位数验证码。")
+            self.timeout_reminder_math = schema_defaults.get("timeout_reminder_math", "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请回答数学题：{question}")
             self.group_configs = []
 
     def _save_config(self):
@@ -91,6 +126,22 @@ class GroupGeetestVerifyPlugin(Star):
             self.config["error_verification"] = self.error_verification
             self.config["recall_unverified_messages"] = self.recall_unverified_messages
             self.config["prompt_unverified_user"] = self.prompt_unverified_user
+            self.config["new_member_prompt"] = self.new_member_prompt
+            self.config["welcome_message"] = self.welcome_message
+            self.config["wrong_answer_prompt"] = self.wrong_answer_prompt
+            self.config["failure_message"] = self.failure_message
+            self.config["kick_message"] = self.kick_message
+            self.config["too_many_wrong_message"] = self.too_many_wrong_message
+            self.config["too_many_wrong_kick_message"] = self.too_many_wrong_kick_message
+            self.config["wrong_code_message"] = self.wrong_code_message
+            self.config["too_many_non_code_message"] = self.too_many_non_code_message
+            self.config["geetest_new_member_prompt"] = self.geetest_new_member_prompt
+            self.config["geetest_wrong_code_prompt"] = self.geetest_wrong_code_prompt
+            self.config["level_no_info_message"] = self.level_no_info_message
+            self.config["level_too_low_message"] = self.level_too_low_message
+            self.config["level_pass_message"] = self.level_pass_message
+            self.config["timeout_reminder_geetest"] = self.timeout_reminder_geetest
+            self.config["timeout_reminder_math"] = self.timeout_reminder_math
             self.config["group_configs"] = self.group_configs
             # 保存到磁盘
             self.config.save_config()
@@ -662,12 +713,13 @@ class GroupGeetestVerifyPlugin(Star):
             if platform == "aiocqhttp" and group_config["enable_level_verify"]:
                 qq_level = await self._get_user_level(uid)
                 if qq_level == 0:
-                    message = f"{at_user} 未查询到您的QQ等级信息，请检查是否在隐私设置内开启等级显示，为了安全起见，将自动进入验证流程。"
+                    message = self.level_no_info_message.format(at_user=at_user)
                 else:
-                    message = f"{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}级，将进入验证流程。"
+                    message = self.level_too_low_message.format(at_user=at_user, qq_level=qq_level, min_level=group_config['min_qq_level'])
                 if qq_level >= group_config["min_qq_level"]:
                     logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
-                    await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。\n欢迎你的加入！")
+                    pass_msg = self.level_pass_message.format(at_user=at_user, qq_level=qq_level, min_level=group_config['min_qq_level'])
+                    await self._send_group_message(event, gid, pass_msg)
                     await self.db.set(state_key, {
                         "status": "verified",
                         "verify_time": asyncio.get_event_loop().time()
@@ -742,12 +794,12 @@ class GroupGeetestVerifyPlugin(Star):
                     await self.db.update_field(state_key, "verify_method", "geetest")
                     full_verify_url = f"{self.api_base_url}{verify_url_path}"
                     if is_new_member:
-                        prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                        prompt_message = self.geetest_new_member_prompt.format(at_user=at_user, timeout=timeout_minutes, url=full_verify_url)
                     else:
                         current_state = self.db.get_cached(state_key) or {}
                         wrong_count = current_state.get("wrong_count", 0)
                         remaining_attempts = group_config["max_wrong_answers"] - wrong_count
-                        prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}"
+                        prompt_message = self.geetest_wrong_code_prompt.format(at_user=at_user, url=full_verify_url, remaining=remaining_attempts)
                     await self._send_group_message(event, gid, prompt_message)
                     return
             except Exception as e:
@@ -755,12 +807,12 @@ class GroupGeetestVerifyPlugin(Star):
         
         await self.db.update_field(state_key, "verify_method", "math")
         if is_new_member:
-            prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。"
+            prompt_message = self.new_member_prompt.format(at_user=at_user, timeout=timeout_minutes, question=question)
         else:
             current_state = self.db.get_cached(state_key) or {}
             wrong_count = current_state.get("wrong_count", 0)
             remaining_attempts = group_config["max_wrong_answers"] - wrong_count
-            prompt_message = f"{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining_attempts}"
+            prompt_message = self.wrong_answer_prompt.format(at_user=at_user, question=question, remaining=remaining_attempts)
 
         await self._send_group_message(event, gid, prompt_message)
 
@@ -828,16 +880,10 @@ class GroupGeetestVerifyPlugin(Star):
             if group_config.get("prompt_unverified_user", True):
                 # 发送验证提示消息，不增加错误计数
                 try:
-                    at_user = f"[CQ:at,qq={uid}]"
+                    at_user = self._format_user_mention(event, uid)
                     timeout_minutes = group_config["verification_timeout"] // 60
-                    
-                    # 使用配置中的提示模板，替换变量
-                    error_msg = group_config["error_verification"].format(
-                        at_user=at_user,
-                        timeout=timeout_minutes
-                    )
-                    
-                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=error_msg)
+                    error_msg = self.error_verification.format(at_user=at_user, timeout=timeout_minutes)
+                    await self._send_group_message(event, gid, error_msg)
                     logger.info(f"[Geetest Verify] 已向未验证用户 {uid} 发送验证提示")
                 except Exception as e:
                     logger.warning(f"[Geetest Verify] 发送验证提示失败: {e}")
@@ -849,20 +895,19 @@ class GroupGeetestVerifyPlugin(Star):
                 
                 # 发送简单的错误提示
                 try:
-                    at_user = f"[CQ:at,qq={uid}]"
-                    error_msg = f"{at_user} 验证码错误！"
-                    # error_msg = f"{at_user} 验证码错误！剩余尝试次数：{remaining_attempts}"
-                    await event.bot.api.call_action("send_group_msg", group_id=gid, message=error_msg)
+                    at_user = self._format_user_mention(event, uid)
+                    error_msg = self.wrong_code_message.format(at_user=at_user)
+                    await self._send_group_message(event, gid, error_msg)
                 except Exception as e:
                     logger.warning(f"[Geetest Verify] 发送错误提示失败: {e}")
                 
                 if wrong_count >= group_config["max_wrong_answers"]:
                     try:
-                        at_user = f"[CQ:at,qq={uid}]"
-                        kick_msg = f"{at_user} 很抱歉，你已连续发送非验证码消息达到 {wrong_count} 次，将被请出本群。"
-                        await event.bot.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+                        at_user = self._format_user_mention(event, uid)
+                        kick_msg = self.too_many_non_code_message.format(at_user=at_user, count=wrong_count)
+                        await self._send_group_message(event, gid, kick_msg)
                         await asyncio.sleep(2)
-                        await event.bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
+                        await self._kick_member(event, gid, uid)
                         logger.info(f"[Geetest Verify] 用户 {uid} 因连续发送非验证码消息 {wrong_count} 次，已被踢出群 {gid}")
                         await self.db.delete(state_key)
                         self._tasks.pop(state_key, None)
@@ -899,7 +944,7 @@ class GroupGeetestVerifyPlugin(Star):
                 self._tasks.pop(state_key, None)
 
                 at_user = self._format_user_mention(event, uid)
-                welcome_msg = f"{at_user} 验证成功，欢迎你的加入！"
+                welcome_msg = self.welcome_message.format(at_user=at_user)
                 await self._send_group_message(event, gid, welcome_msg)
                 event.stop_event()
             else:
@@ -918,13 +963,13 @@ class GroupGeetestVerifyPlugin(Star):
                         task.cancel()
                     
                     at_user = self._format_user_mention(event, uid)
-                    kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
+                    kick_msg = self.too_many_wrong_message.format(at_user=at_user, count=wrong_count)
                     await self._send_group_message(event, gid, kick_msg)
                     
                     await asyncio.sleep(2)
                     await self._kick_member(event, gid, uid)
                     
-                    final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
+                    final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
                     await self._send_group_message(event, gid, final_msg)
                     
                     await self.db.delete(state_key)
@@ -958,7 +1003,7 @@ class GroupGeetestVerifyPlugin(Star):
                 self._tasks.pop(state_key, None)
 
                 at_user = self._format_user_mention(event, uid)
-                welcome_msg = f"{at_user} 验证成功，欢迎你的加入！"
+                welcome_msg = self.welcome_message.format(at_user=at_user)
                 await self._send_group_message(event, gid, welcome_msg)
                 event.stop_event()
             else:
@@ -977,13 +1022,13 @@ class GroupGeetestVerifyPlugin(Star):
                         task.cancel()
                     
                     at_user = self._format_user_mention(event, uid)
-                    kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
+                    kick_msg = self.too_many_wrong_message.format(at_user=at_user, count=wrong_count)
                     await self._send_group_message(event, gid, kick_msg)
                     
                     await asyncio.sleep(2)
                     await self._kick_member(event, gid, uid)
                     
-                    final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
+                    final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
                     await self._send_group_message(event, gid, final_msg)
                     
                     await self.db.delete(state_key)
@@ -1073,7 +1118,7 @@ class GroupGeetestVerifyPlugin(Star):
                         if verify_url_path:
                             # 拼接完整 URL
                             full_verify_url = f"{self.api_base_url}{verify_url_path}"
-                            reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。"
+                            reminder_msg = self.timeout_reminder_geetest.format(at_user=at_user, url=full_verify_url)
                             if platform == "aiocqhttp":
                                 if hasattr(platform_client, "api"):
                                     await platform_client.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
@@ -1088,7 +1133,7 @@ class GroupGeetestVerifyPlugin(Star):
                         else:
                             # 极验验证失败，回退到数学题验证
                             question, answer = self._generate_math_problem()
-                            reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内回答数学题：{question}"
+                            reminder_msg = self.timeout_reminder_math.format(at_user=at_user, question=question)
                             if platform == "aiocqhttp":
                                 if hasattr(platform_client, "api"):
                                     await platform_client.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
@@ -1112,7 +1157,7 @@ class GroupGeetestVerifyPlugin(Star):
                                 await self.db.update_field(state_key, "question", question)
                                 await self.db.update_field(state_key, "answer", answer)
                         
-                        reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内回答数学题：{question}"
+                        reminder_msg = self.timeout_reminder_math.format(at_user=at_user, question=question)
                         if platform == "aiocqhttp":
                             if hasattr(platform_client, "api"):
                                 await platform_client.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
@@ -1133,10 +1178,9 @@ class GroupGeetestVerifyPlugin(Star):
 
             at_user = f"[CQ:at,qq={uid}]" if platform == "aiocqhttp" else f"[用户](tg://user?id={uid})"
             
-            # 获取配置的踢出延迟
             kick_delay = group_config.get("kick_delay", self.kick_delay)
             
-            failure_msg = f"{at_user} 验证超时，你将在 {kick_delay} 秒后被请出本群。"
+            failure_msg = self.failure_message.format(at_user=at_user, countdown=kick_delay)
             if platform == "aiocqhttp":
                 if hasattr(platform_client, "api"):
                     await platform_client.api.call_action("send_group_msg", group_id=gid, message=failure_msg)
@@ -1169,7 +1213,7 @@ class GroupGeetestVerifyPlugin(Star):
             await self.db.delete(state_key)
             self._tasks.pop(state_key, None)
             
-            kick_msg = f"{at_user} 因未在规定时间内完成验证，已被请出本群。"
+            kick_msg = self.kick_message.format(at_user=at_user)
             if platform == "aiocqhttp":
                 if hasattr(platform_client, "api"):
                     await platform_client.api.call_action("send_group_msg", group_id=gid, message=kick_msg)

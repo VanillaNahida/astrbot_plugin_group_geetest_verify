@@ -12,10 +12,10 @@
     "hint": "发送'验证超时'消息后，等待多少秒再执行踢人操作。默认 5 秒。"
   },
   "new_member_prompt": {
-    "description": "新成员入群提示语",
+    "description": "数学题验证-新成员入群提示语",
     "type": "string",
-    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内回答下面的问题以完成验证：\n{question}",
-    "hint": "用户入群时的提示语。可用变量: {at_user}, {question}, {timeout} (分钟)。"
+    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。",
+    "hint": "数学题验证模式下，用户入群时的提示语。可用变量: {at_user}, {question}, {timeout} (分钟)。"
   },
   "welcome_message": {
     "description": "验证成功提示语",
@@ -24,27 +24,27 @@
     "hint": "用户验证成功后发送的消息。可用变量: {at_user}。"
   },
   "wrong_answer_prompt": {
-    "description": "答案错误提示语",
+    "description": "数学题验证-答案错误提示语",
     "type": "string",
-    "default": "{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}",
-    "hint": "用户回答错误后发送的消息，之后会自动生成新问题。可用变量: {at_user}, {question}。"
+    "default": "{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining}",
+    "hint": "数学题验证模式下，用户回答错误后发送的消息。可用变量: {at_user}, {question}, {remaining} (剩余尝试次数)。"
   },
   "error_verification": {
-    "description": "验证错误提示",
+    "description": "未验证用户发言提示",
     "type": "string",
     "default": "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证",
-    "hint": "用户入群未验证时发送消息撤回提示。可用变量: {at_user}, {timeout} (分钟)。"
+    "hint": "用户入群未验证时发送消息的提示。可用变量: {at_user}, {timeout} (分钟)。"
   },
   "failure_message": {
     "description": "验证超时提示语",
     "type": "string",
-    "default": "{at_user} 很抱歉，您对验证的响应超时，您将在 {countdown} 秒后被请出本群。",
+    "default": "{at_user} 验证超时，你将在 {countdown} 秒后被请出本群。",
     "hint": "用户因超时而验证失败后，踢出前发送的消息。可用变量: {at_user}, {countdown} (踢出延迟秒数)。"
   },
   "kick_message": {
     "description": "最终踢出提示语",
     "type": "string",
-    "default": "{at_user} 很抱歉，您因未在规定时间内完成验证，已被请出本群。",
+    "default": "{at_user} 因未在规定时间内完成验证，已被请出本群。",
     "hint": "用户被踢出后发送的公开消息。可用变量: {at_user}。"
   },
   "max_wrong_answers": {
@@ -59,11 +59,71 @@
     "default": "{at_user} 很抱歉，你已连续回答错误 {count} 次，将被请出本群。",
     "hint": "用户回答错误次数过多时发送的消息。可用变量: {at_user}, {count} (错误次数)。"
   },
+  "too_many_wrong_kick_message": {
+    "description": "错误次数过多踢出后提示语",
+    "type": "string",
+    "default": "{at_user} 因回答错误次数过多，已被请出本群。",
+    "hint": "用户因错误次数过多被踢出后发送的公开消息。可用变量: {at_user}。"
+  },
+  "wrong_code_message": {
+    "description": "验证码错误简短提示",
+    "type": "string",
+    "default": "{at_user} 验证码错误！",
+    "hint": "用户未启用提示时发送非验证码消息的简短错误提示。可用变量: {at_user}。"
+  },
+  "too_many_non_code_message": {
+    "description": "非验证码消息过多踢出提示语",
+    "type": "string",
+    "default": "{at_user} 很抱歉，你已连续发送非验证码消息达到 {count} 次，将被请出本群。",
+    "hint": "用户连续发送非验证码消息达到上限时发送的消息。可用变量: {at_user}, {count} (错误次数)。"
+  },
+  "geetest_new_member_prompt": {
+    "description": "极验验证-新成员入群提示语",
+    "type": "string",
+    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内复制下方链接前往浏览器完成人机验证：\n{url}\n验证完成后，请在群内发送六位数验证码。",
+    "hint": "极验验证模式下，用户入群时的提示语。可用变量: {at_user}, {timeout} (分钟), {url} (验证链接)。"
+  },
+  "geetest_wrong_code_prompt": {
+    "description": "极验验证-验证码错误提示语",
+    "type": "string",
+    "default": "{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining}",
+    "hint": "极验验证模式下，用户验证码错误后发送的消息。可用变量: {at_user}, {url} (验证链接), {remaining} (剩余尝试次数)。"
+  },
+  "level_no_info_message": {
+    "description": "等级查询不到/查询失败提示语",
+    "type": "string",
+    "default": "{at_user} 未查询到您的QQ等级信息，请检查是否在隐私设置内开启等级显示，为了安全起见，将自动进入验证流程。",
+    "hint": "启用等级验证时，查询不到用户QQ等级时发送的消息。可用变量: {at_user}。"
+  },
+  "level_too_low_message": {
+    "description": "等级低于要求提示语",
+    "type": "string",
+    "default": "{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {min_level}级，将进入验证流程。",
+    "hint": "启用等级验证时，用户QQ等级低于要求时发送的消息。可用变量: {at_user}, {qq_level} (用户等级), {min_level} (最低要求等级)。"
+  },
+  "level_pass_message": {
+    "description": "等级验证通过提示语",
+    "type": "string",
+    "default": "{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {min_level}级，已跳过验证流程。\n欢迎你的加入！",
+    "hint": "启用等级验证时，用户QQ等级达标时发送的消息。可用变量: {at_user}, {qq_level} (用户等级), {min_level} (最低要求等级)。"
+  },
+  "timeout_reminder_geetest": {
+    "description": "超时提醒-极验验证",
+    "type": "string",
+    "default": "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{url}\n验证完成后，请在群内发送六位数验证码。",
+    "hint": "验证超时前1分钟的提醒消息（极验验证模式）。可用变量: {at_user}, {url} (验证链接)。"
+  },
+  "timeout_reminder_math": {
+    "description": "超时提醒-数学题验证",
+    "type": "string",
+    "default": "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请回答数学题：{question}",
+    "hint": "验证超时前1分钟的提醒消息（数学题验证模式）。可用变量: {at_user}, {question} (数学题)。"
+  },
   "api_base_url": {
     "description": "极验验证后端 API 基础地址",
     "type": "string",
     "default": "",
-    "hint": "极验验证后端服务的 API 基础地址，注意末尾不要带斜杠，例如 https://example.com，若不想自建服务想使用作者的服务，请加群获取：195260107"
+    "hint": "极验验证后端服务的 API 基础地址，注意末尾不要带斜杠，例如 https://example.com，若不想自建服务想使用作者的服务，请加群私信群主获取：195260107"
   },
   "api_key": {
     "description": "API 访问密钥",

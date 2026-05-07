@@ -107,82 +107,101 @@
     "default": true,
     "hint": "如果启用，用户未验证时发送消息将提醒用户完成验证，不增加验证错误计数；如果关闭，用户未验证时发送消息将增加验证错误计数，达到一定次数将被踢出群。默认开启。"
   },
-  "group_configs": {
-    "description": "群级别配置",
-    "type": "template_list",
-    "hint": "为不同的群配置不同的验证参数。可以在 WebUI 上快速添加和编辑群配置。",
-    "templates": {
-      "default_config": {
-        "name": "默认配置",
-        "hint": "适用于大多数群的标准配置",
-        "items": {
-          "group_id": {
-            "description": "群号",
-            "type": "int",
-            "hint": "要配置的群号"
-          },
-          "enabled": {
-            "description": "启用验证",
-            "type": "bool",
-            "default": false,
-            "hint": "是否启用该群的入群验证。默认关闭。"
-          },
-          "verification_timeout": {
-            "description": "验证总超时时间（秒）",
-            "type": "int",
-            "default": 300,
-            "hint": "新成员必须在此时间内完成验证，否则启动踢出流程。默认 300 秒（5 分钟）。"
-          },
-          "max_wrong_answers": {
-            "description": "最大错误回答次数",
-            "type": "int",
-            "default": 5,
-            "hint": "用户回答错误的最大次数，超过此次数将被踢出群。默认 5 次。"
-          },
-          "enable_geetest_verify": {
-            "description": "启用极验验证",
-            "type": "bool",
-            "default": false,
-            "hint": "是否启用极验验证。如果启用，将使用极验验证后端服务进行验证；如果禁用，将使用本地数学题验证。"
-          },
-          "enable_level_verify": {
-            "description": "启用等级验证",
-            "type": "bool",
-            "default": false,
-            "hint": "是否启用等级验证。如果启用，QQ等级大于等于最低等级的用户将自动跳过验证。"
-          },
-          "recall_unverified_messages": {
-            "description": "是否撤回未验证用户的非验证码消息",
-            "type": "bool",
-            "default": false,
-            "hint": "如果启用，将撤回未验证用户发送的非验证码消息。默认关闭。"
-          },
-          "prompt_unverified_user": {
-            "description": "是否提示用户完成验证",
-            "type": "bool",
-            "default": true,
-            "hint": "如果启用，用户未验证时发送消息将提醒用户完成验证，不增加验证错误计数；如果关闭，用户未验证时发送消息将增加验证错误计数，达到一定次数将被踢出群。默认开启。"
-          },
-          "min_qq_level": {
-            "description": "最低QQ等级",
-            "type": "int",
-            "default": 20,
-            "hint": "启用等级验证时，用户QQ等级达到此等级将自动跳过验证。默认 20 级（皇爵）。"
-          },
-          "verify_delay": {
-            "description": "入群验证延时（秒）",
-            "type": "int",
-            "default": 3,
-            "hint": "新成员入群后，延时多少秒再发送验证消息。设置为 0 表示立即发送。默认 3 秒。"
-          },
-          "kick_delay": {
-            "description": "验证超时后踢出延迟（秒）",
-            "type": "int",
-            "default": 5,
-            "hint": "发送'验证超时'消息后，等待多少秒再执行踢人操作。默认 5 秒。"
-          }
-        }
-      }
-    }
-  }
-}
+  "new_member_prompt_geetest": {
+    "description": "新成员入群提示语（极验验证）",
+    "type": "string",
+    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。",
+    "hint": "新成员入群时的极验验证提示语。可用变量: {at_user}, {verify_url}, {timeout} (分钟)。"
+  },
+  "new_member_prompt_math": {
+    "description": "新成员入群提示语（数学题验证）",
+    "type": "string",
+    "default": "{at_user} 欢迎加入本群！请在 {timeout} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。",
+    "hint": "新成员入群时的数学题验证提示语。可用变量: {at_user}, {question}, {timeout} (分钟)。"
+  },
+  "wrong_answer_prompt_geetest": {
+    "description": "答案错误提示语（极验验证）",
+    "type": "string",
+    "default": "{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}",
+    "hint": "用户验证码错误后发送的消息。可用变量: {at_user}, {verify_url}, {remaining_attempts}。"
+  },
+  "wrong_answer_prompt_math": {
+    "description": "答案错误提示语（数学题验证）",
+    "type": "string",
+    "default": "{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining_attempts}",
+    "hint": "用户回答错误后发送的消息。可用变量: {at_user}, {question}, {remaining_attempts}。"
+  },
+  "welcome_message": {
+    "description": "验证成功提示语",
+    "type": "string",
+    "default": "{at_user} 验证成功，欢迎你的加入！",
+    "hint": "用户验证成功后发送的消息。可用变量: {at_user}。"
+  },
+  "error_verification": {
+    "description": "验证错误提示",
+    "type": "string",
+    "default": "{at_user} 你还未完成验证。请在 {timeout} 分钟内输入验证码以完成验证",
+    "hint": "用户入群未验证时发送消息撤回提示。可用变量: {at_user}, {timeout} (分钟)。"
+  },
+  "failure_message": {
+    "description": "验证超时提示语",
+    "type": "string",
+    "default": "{at_user} 验证超时，你将在 {kick_delay} 秒后被请出本群。",
+    "hint": "用户因超时而验证失败后，踢出前发送的消息。可用变量: {at_user}, {kick_delay} (踢出延迟秒数)。"
+  },
+  "kick_message": {
+    "description": "最终踢出提示语",
+    "type": "string",
+    "default": "{at_user} 因未在规定时间内完成验证，已被请出本群。",
+    "hint": "用户被踢出后发送的公开消息。可用变量: {at_user}。"
+  },
+  "too_many_wrong_message": {
+    "description": "错误次数过多踢出提示语",
+    "type": "string",
+    "default": "{at_user} 你已连续回答错误 {count} 次，将被请出本群。",
+    "hint": "用户回答错误次数过多时发送的消息。可用变量: {at_user}, {count} (错误次数)。"
+  },
+  "level_verify_skip_message": {
+    "description": "等级验证跳过提示语",
+    "type": "string",
+    "default": "{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {min_level}级，已跳过验证流程。\n欢迎你的加入！",
+    "hint": "用户QQ等级达到要求时发送的消息。可用变量: {at_user}, {qq_level}, {min_level}。"
+  },
+  "level_verify_fail_message": {
+    "description": "等级验证失败提示语",
+    "type": "string",
+    "default": "{at_user} 您的QQ等级为 {qq_level}，低于最低等级要求 {min_level}级，将进入验证流程。",
+    "hint": "用户QQ等级不达要求时发送的消息。可用变量: {at_user}, {qq_level}, {min_level}。"
+  },
+  "level_verify_unknown_message": {
+    "description": "等级验证查询失败提示语",
+    "type": "string",
+    "default": "{at_user} 未查询到您的QQ等级信息，请检查是否在隐私设置内开启等级显示，为了安全起见，将自动进入验证流程。",
+    "hint": "无法查询用户QQ等级时发送的消息。可用变量: {at_user}。"
+  },
+  "timeout_reminder_geetest": {
+    "description": "验证超时前1分钟提醒（极验验证）",
+    "type": "string",
+    "default": "{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout} 分钟内复制下方链接前往浏览器完成人机验证，之前的链接可能已失效，请使用新链接完成验证：\n{verify_url}\n验证完成后，请在群内发送六位数验证码。",
+    "hint": "验证超时前1分钟的提醒消息（极验验证）。可用变量: {at_user}, {verify_url}, {timeout}。"
+  },
+  "timeout_reminder_math": {
+    "description": "验证超时前1分钟提醒（数学题验证）",
+    "type": "string",
+    "default": "{at_最后 1 分钟，请尽快完成验证！\n请在 {timeout} 分钟内回答数学题：{question}",
+    "hint": "验证超时前1分钟的提醒消息（数学题验证）。可用变量: {at_user}, {question}, {timeout}。"
+  },
+  "permission_denied_message": {
+    "description": "权限不足提示语",
+    "type": "string",
+    "default": "{at_user} 只有群主、管理员或 Bot 管理员才能使用此指令",
+    "hint": "用户权限不足时发送的消息。可用变量: {at_user}。"
+  },
+  "verify_not_enabled_message": {
+    "description": "验证未开启提示语",
+    "type": "string",
+    "default": "当前群未开启验证哦~",
+    "hint": "群未开启验证时发送的消息。"
+  },
+  "verify_already_enabled_message": {
+    "d

@@ -3,13 +3,16 @@ import json
 import os
 import random
 import re
+from pathlib import Path
 from typing import Dict, Any, Tuple
 import aiohttp
 
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core.config.default import VERSION
+
+from .data import VerifyStateDB
 
 # 插件版本号
 PLUGIN_VERSION = "1.2.7"
@@ -27,10 +30,11 @@ class GroupGeetestVerifyPlugin(Star):
         self.context = context
         self.config = config or {}
         
-        # 验证状态管理: { "gid:uid": {"status": "pending"|"verified"|"bypassed", "task": asyncio.Task, ...} }
-        self.verify_states: Dict[str, Dict[str, Any]] = {}
+        self._data_dir = StarTools.get_data_dir("astrbot_plugin_group_geetest_verify")
+        db_path = self._data_dir / "verify_states.db"
+        self.db = VerifyStateDB(db_path)
+        self._tasks: Dict[str, asyncio.Task] = {}
         
-        # 创建全局 aiohttp ClientSession
         self.session = aiohttp.ClientSession()
         
         # 从配置文件 schema 读取默认值
@@ -198,13 +202,13 @@ class GroupGeetestVerifyPlugin(Star):
         """实现异步的插件初始化方法，当加载并实例化该插件类之后会自动调用该方法。"""
         logger.info("[Geetest Verify] 插件初始化中...")
         
-        # 确保 aiohttp ClientSession 已创建
         if not hasattr(self, 'session') or self.session.closed:
             self.session = aiohttp.ClientSession()
             logger.info("[Geetest Verify] 已创建 aiohttp ClientSession （用于请求验证服务器）")
         
-        # 初始化验证状态管理
-        self.verify_states: Dict[str, Dict[str, Any]] = {}
+        await self.db.init()
+        await self.db.cleanup_expired(max_age_seconds=86400)
+        await self._sync_config_to_db()
         
         logger.info("[Geetest Verify] 插件初始化完成")
         logger.info("[Geetest Verify] 全局配置：")
@@ -215,14 +219,30 @@ class GroupGeetestVerifyPlugin(Star):
         logger.info(f"[Geetest Verify] - 等级验证: {'已启用' if self.enable_level_verify else '未启用'}")
         logger.info(f"[Geetest Verify] - 已配置群数量: {len(self.group_configs)}")
 
+    async def _sync_config_to_db(self):
+        updated = 0
+        for key in self.db.all_keys():
+            state = self.db.get_cached(key)
+            if not state or state.get("status") != "pending":
+                continue
+            parts = key.split(":")
+            if len(parts) == 2:
+                try:
+                    gid = int(parts[0])
+                except (ValueError, TypeError):
+                    continue
+                group_config = self._get_group_config(gid)
+                await self.db.update_field(key, "max_wrong_answers", group_config["max_wrong_answers"])
+                updated += 1
+        if updated > 0:
+            logger.info(f"[Geetest Verify] 已同步配置到 {updated} 条待验证记录")
+
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
         logger.info("[Geetest Verify] 插件正在卸载...")
         
-        # 取消所有正在进行的验证任务
         cancelled_count = 0
-        for state in self.verify_states.values():
-            task = state.get("task")
+        for task in self._tasks.values():
             if task and not task.done():
                 task.cancel()
                 cancelled_count += 1
@@ -230,10 +250,10 @@ class GroupGeetestVerifyPlugin(Star):
         if cancelled_count > 0:
             logger.info(f"[Geetest Verify] 已取消 {cancelled_count} 个正在进行的验证任务")
         
-        # 清理验证状态
-        self.verify_states.clear()
+        self._tasks.clear()
         
-        # 关闭 aiohttp session
+        await self.db.close()
+        
         await self.cleanup()
         
         logger.info("[Geetest Verify] 插件已成功卸载")
@@ -619,13 +639,12 @@ class GroupGeetestVerifyPlugin(Star):
             if not group_config["enabled"]:
                 return
             
-            # 检查用户是否已被标记为绕过验证
-            if state_key in self.verify_states and self.verify_states[state_key].get("status") == "bypassed":
+            cached = self.db.get_cached(state_key)
+            if cached and cached.get("status") == "bypassed":
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已标记为绕过验证，跳过验证流程")
                 continue
             
-            # 检查用户是否已验证过
-            if state_key in self.verify_states and self.verify_states[state_key].get("status") == "verified":
+            if cached and cached.get("status") == "verified":
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已验证过，跳过验证流程")
                 continue
 
@@ -649,11 +668,10 @@ class GroupGeetestVerifyPlugin(Star):
                 if qq_level >= group_config["min_qq_level"]:
                     logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，达到最低等级要求 {group_config['min_qq_level']}，跳过验证流程")
                     await self._send_group_message(event, gid, f"{at_user} 您的QQ等级为 {qq_level}，大于等于最低等级要求 {group_config['min_qq_level']}级，已跳过验证流程。\n欢迎你的加入！")
-                    # 标记用户为已验证
-                    self.verify_states[state_key] = {
+                    await self.db.set(state_key, {
                         "status": "verified",
                         "verify_time": asyncio.get_event_loop().time()
-                    }
+                    })
                     skip_verify = True
                 else:
                     logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}，将进入验证流程")
@@ -682,57 +700,52 @@ class GroupGeetestVerifyPlugin(Star):
         """为用户启动或重启验证流程"""
         state_key = f"{gid}:{uid}"
         
-        # 如果没有提供群配置，则获取默认配置
         if group_config is None:
             group_config = self._get_group_config(gid)
         
-        # 如果用户已有验证状态，取消之前的任务
-        if state_key in self.verify_states:
-            old_task = self.verify_states[state_key].get("task")
-            if old_task and not old_task.done():
-                old_task.cancel()
+        old_task = self._tasks.get(state_key)
+        if old_task and not old_task.done():
+            old_task.cancel()
 
         task = asyncio.create_task(self._timeout_kick(uid, gid, group_config["verification_timeout"], event))
+        self._tasks[state_key] = task
         
-        # 如果是新成员，重置错误计数；否则保留现有错误计数
         if is_new_member:
-            self.verify_states[state_key] = {
+            await self.db.set(state_key, {
                 "status": "pending",
                 "question": question,
                 "answer": answer,
-                "task": task,
                 "wrong_count": 0,
                 "verify_method": "geetest",
                 "max_wrong_answers": group_config["max_wrong_answers"]
-            }
+            })
         else:
-            wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
-            verify_method = self.verify_states.get(state_key, {}).get("verify_method", "geetest")
-            self.verify_states[state_key] = {
+            existing = self.db.get_cached(state_key) or {}
+            wrong_count = existing.get("wrong_count", 0)
+            verify_method = existing.get("verify_method", "geetest")
+            await self.db.set(state_key, {
                 "status": "pending",
                 "question": question,
                 "answer": answer,
-                "task": task,
                 "wrong_count": wrong_count,
                 "verify_method": verify_method,
                 "max_wrong_answers": group_config["max_wrong_answers"]
-            }
+            })
 
         at_user = self._format_user_mention(event, uid)
         timeout_minutes = group_config["verification_timeout"] // 60
 
-        # 如果启用了极验验证，优先使用极验验证
         if group_config["enable_geetest_verify"] and self.api_key:
             try:
                 verify_url_path = await self._create_geetest_verify(gid, uid)
                 if verify_url_path:
-                    self.verify_states[state_key]["verify_method"] = "geetest"
-                    # 拼接完整 URL
+                    await self.db.update_field(state_key, "verify_method", "geetest")
                     full_verify_url = f"{self.api_base_url}{verify_url_path}"
                     if is_new_member:
                         prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内复制下方链接前往浏览器完成人机验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。"
                     else:
-                        wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
+                        current_state = self.db.get_cached(state_key) or {}
+                        wrong_count = current_state.get("wrong_count", 0)
                         remaining_attempts = group_config["max_wrong_answers"] - wrong_count
                         prompt_message = f"{at_user} 验证码错误，请重新复制下方链接前往浏览器完成人机验证：\n{full_verify_url}\n验证完成后，请在群内发送六位数验证码。\n您的剩余尝试次数：{remaining_attempts}"
                     await self._send_group_message(event, gid, prompt_message)
@@ -740,12 +753,12 @@ class GroupGeetestVerifyPlugin(Star):
             except Exception as e:
                 logger.warning(f"[Geetest Verify] 调用极验 API 失败: {e}，回退到算术验证")
         
-        # 回退到算术验证
-        self.verify_states[state_key]["verify_method"] = "math"
+        await self.db.update_field(state_key, "verify_method", "math")
         if is_new_member:
             prompt_message = f"{at_user} 欢迎加入本群！请在 {timeout_minutes} 分钟内回答下面的问题以完成验证：\n{question}\n注意：请直接发送计算结果，无需其他文字。"
         else:
-            wrong_count = self.verify_states.get(state_key, {}).get("wrong_count", 0)
+            current_state = self.db.get_cached(state_key) or {}
+            wrong_count = current_state.get("wrong_count", 0)
             remaining_attempts = group_config["max_wrong_answers"] - wrong_count
             prompt_message = f"{at_user} 答案错误，请重新回答验证。这是你的新问题：\n{question}\n剩余尝试次数：{remaining_attempts}"
 
@@ -765,19 +778,18 @@ class GroupGeetestVerifyPlugin(Star):
         
         state_key = f"{gid}:{uid}"
         
-        if state_key not in self.verify_states:
+        state = self.db.get_cached(state_key)
+        if not state:
             return
         
-        if self.verify_states[state_key].get("status") != "pending":
+        if state.get("status") != "pending":
             return
         
         text = event.message_str.strip()
         
-        # 获取群级别配置
         group_config = self._get_group_config(gid)
         
-        # 根据用户的验证方法决定处理方式
-        verify_method = self.verify_states[state_key].get("verify_method", "geetest")
+        verify_method = state.get("verify_method", "geetest")
         
         # 先检查消息是否匹配验证码，如果是验证码则不撤回
         is_verification_answer = False
@@ -788,12 +800,11 @@ class GroupGeetestVerifyPlugin(Star):
             if match:
                 is_verification_answer = True
         else:
-            # 检查是否是数学题答案
             try:
                 match = re.search(r'(\d+)', text)
                 if match:
                     user_answer = int(match.group(1))
-                    correct_answer = self.verify_states[state_key].get("answer")
+                    correct_answer = state.get("answer")
                     if user_answer == correct_answer:
                         is_verification_answer = True
             except (ValueError, TypeError):
@@ -831,9 +842,9 @@ class GroupGeetestVerifyPlugin(Star):
                 except Exception as e:
                     logger.warning(f"[Geetest Verify] 发送验证提示失败: {e}")
             else:
-                # 不提示用户，增加错误计数
-                self.verify_states[state_key]["wrong_count"] += 1
-                wrong_count = self.verify_states[state_key]["wrong_count"]
+                state["wrong_count"] = state.get("wrong_count", 0) + 1
+                wrong_count = state["wrong_count"]
+                await self.db.update_field(state_key, "wrong_count", wrong_count)
                 logger.info(f"[Geetest Verify] 用户 {uid} 发送非验证码消息，错误计数增加至 {wrong_count}")
                 
                 # 发送简单的错误提示
@@ -845,9 +856,7 @@ class GroupGeetestVerifyPlugin(Star):
                 except Exception as e:
                     logger.warning(f"[Geetest Verify] 发送错误提示失败: {e}")
                 
-                # 检查是否超过最大错误次数
                 if wrong_count >= group_config["max_wrong_answers"]:
-                    # 踢出用户
                     try:
                         at_user = f"[CQ:at,qq={uid}]"
                         kick_msg = f"{at_user} 很抱歉，你已连续发送非验证码消息达到 {wrong_count} 次，将被请出本群。"
@@ -855,20 +864,18 @@ class GroupGeetestVerifyPlugin(Star):
                         await asyncio.sleep(2)
                         await event.bot.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
                         logger.info(f"[Geetest Verify] 用户 {uid} 因连续发送非验证码消息 {wrong_count} 次，已被踢出群 {gid}")
-                        # 清除验证状态
-                        if state_key in self.verify_states:
-                            self.verify_states.pop(state_key, None)
+                        await self.db.delete(state_key)
+                        self._tasks.pop(state_key, None)
                     except Exception as e:
                         logger.error(f"[Geetest Verify] 踢出用户 {uid} 失败: {e}")
             
             # 不是验证答案，直接返回
             return
         
-        # 获取群级别配置
         group_config = self._get_group_config(gid)
         
-        # 根据用户的验证方法决定处理方式
-        verify_method = self.verify_states[state_key].get("verify_method", "geetest")
+        state = self.db.get_cached(state_key)
+        verify_method = state.get("verify_method", "geetest")
         
         if verify_method == "geetest":
             # 提取验证码（6位数字+字母）
@@ -882,9 +889,14 @@ class GroupGeetestVerifyPlugin(Star):
             
             if is_valid:
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
-                self.verify_states[state_key]["task"].cancel()
-                self.verify_states[state_key]["status"] = "verified"
-                self.verify_states[state_key]["verify_time"] = asyncio.get_event_loop().time()
+                task = self._tasks.get(state_key)
+                if task and not task.done():
+                    task.cancel()
+                await self.db.set(state_key, {
+                    "status": "verified",
+                    "verify_time": asyncio.get_event_loop().time()
+                })
+                self._tasks.pop(state_key, None)
 
                 at_user = self._format_user_mention(event, uid)
                 welcome_msg = f"{at_user} 验证成功，欢迎你的加入！"
@@ -893,42 +905,37 @@ class GroupGeetestVerifyPlugin(Star):
             else:
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证码错误，重新生成验证链接")
                 
-                # 增加错误计数
-                self.verify_states[state_key]["wrong_count"] += 1
-                wrong_count = self.verify_states[state_key]["wrong_count"]
+                state["wrong_count"] = state.get("wrong_count", 0) + 1
+                wrong_count = state["wrong_count"]
+                await self.db.update_field(state_key, "wrong_count", wrong_count)
                 
-                # 检查是否超过最大错误次数
-                max_wrong_answers = self.verify_states[state_key].get("max_wrong_answers", group_config["max_wrong_answers"])
+                max_wrong_answers = state.get("max_wrong_answers", group_config["max_wrong_answers"])
                 if wrong_count >= max_wrong_answers:
                     logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
                     
-                    # 取消超时任务
-                    self.verify_states[state_key]["task"].cancel()
+                    task = self._tasks.get(state_key)
+                    if task and not task.done():
+                        task.cancel()
                     
-                    # 发送踢出消息
                     at_user = self._format_user_mention(event, uid)
                     kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
                     await self._send_group_message(event, gid, kick_msg)
                     
-                    # 踢出用户
                     await asyncio.sleep(2)
                     await self._kick_member(event, gid, uid)
                     
-                    # 发送踢出完成消息
                     final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
                     await self._send_group_message(event, gid, final_msg)
                     
-                    # 删除验证状态
-                    self.verify_states.pop(state_key, None)
+                    await self.db.delete(state_key)
+                    self._tasks.pop(state_key, None)
                     
                     event.stop_event()
                     return
                 
-                # 重新生成验证链接
                 await self._start_verification_process(event, uid, gid, "", 0, is_new_member=False, group_config=group_config)
                 event.stop_event()
         else:
-            # 使用本地数学题验证
             try:
                 match = re.search(r'(\d+)', text)
                 if not match:
@@ -937,13 +944,18 @@ class GroupGeetestVerifyPlugin(Star):
             except (ValueError, TypeError):
                 return
 
-            correct_answer = self.verify_states[state_key].get("answer")
+            correct_answer = state.get("answer")
 
             if user_answer == correct_answer:
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
-                self.verify_states[state_key]["task"].cancel()
-                self.verify_states[state_key]["status"] = "verified"
-                self.verify_states[state_key]["verify_time"] = asyncio.get_event_loop().time()
+                task = self._tasks.get(state_key)
+                if task and not task.done():
+                    task.cancel()
+                await self.db.set(state_key, {
+                    "status": "verified",
+                    "verify_time": asyncio.get_event_loop().time()
+                })
+                self._tasks.pop(state_key, None)
 
                 at_user = self._format_user_mention(event, uid)
                 welcome_msg = f"{at_user} 验证成功，欢迎你的加入！"
@@ -952,38 +964,34 @@ class GroupGeetestVerifyPlugin(Star):
             else:
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 回答错误，重新生成问题")
                 
-                # 增加错误计数
-                self.verify_states[state_key]["wrong_count"] += 1
-                wrong_count = self.verify_states[state_key]["wrong_count"]
+                state["wrong_count"] = state.get("wrong_count", 0) + 1
+                wrong_count = state["wrong_count"]
+                await self.db.update_field(state_key, "wrong_count", wrong_count)
                 
-                # 检查是否超过最大错误次数
-                max_wrong_answers = self.verify_states[state_key].get("max_wrong_answers", group_config["max_wrong_answers"])
+                max_wrong_answers = state.get("max_wrong_answers", group_config["max_wrong_answers"])
                 if wrong_count >= max_wrong_answers:
                     logger.info(f"[Geetest Verify] 用户 {uid} 回答错误次数达到 {wrong_count} 次，将踢出")
                     
-                    # 取消超时任务
-                    self.verify_states[state_key]["task"].cancel()
+                    task = self._tasks.get(state_key)
+                    if task and not task.done():
+                        task.cancel()
                     
-                    # 发送踢出消息
                     at_user = self._format_user_mention(event, uid)
                     kick_msg = f"{at_user} 你已连续回答错误 {wrong_count} 次，将被请出本群。"
                     await self._send_group_message(event, gid, kick_msg)
                     
-                    # 踢出用户
                     await asyncio.sleep(2)
                     await self._kick_member(event, gid, uid)
                     
-                    # 发送踢出完成消息
                     final_msg = f"{at_user} 因回答错误次数过多，已被请出本群。"
                     await self._send_group_message(event, gid, final_msg)
                     
-                    # 删除验证状态
-                    self.verify_states.pop(state_key, None)
+                    await self.db.delete(state_key)
+                    self._tasks.pop(state_key, None)
                     
                     event.stop_event()
                     return
                 
-                # 重新生成问题
                 question, answer = self._generate_math_problem()
                 await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False, group_config=group_config)
                 event.stop_event()
@@ -1009,16 +1017,15 @@ class GroupGeetestVerifyPlugin(Star):
         
         state_key = f"{gid}:{uid}"
         
-        if state_key not in self.verify_states:
+        if not self.db.contains(state_key):
             return
         
-        # 取消验证任务
-        task = self.verify_states[state_key].get("task")
+        task = self._tasks.get(state_key)
         if task and not task.done():
             task.cancel()
         
-        # 删除验证状态
-        self.verify_states.pop(state_key, None)
+        await self.db.delete(state_key)
+        self._tasks.pop(state_key, None)
         
         logger.info(f"[Geetest Verify] 用户 {uid} 已离开群 {gid}，清除验证状态")
 
@@ -1052,12 +1059,12 @@ class GroupGeetestVerifyPlugin(Star):
                 await asyncio.sleep(timeout - 60)
 
                 state_key = f"{gid}:{uid}"
-                if state_key in self.verify_states:
+                if self.db.contains(state_key):
                     at_user = f"[CQ:at,qq={uid}]" if platform == "aiocqhttp" else f"[用户](tg://user?id={uid})"
                     timeout_minutes = timeout // 60
                     
-                    # 获取用户当前的验证方法
-                    verify_method = self.verify_states[state_key].get("verify_method", "geetest")
+                    current_state = self.db.get_cached(state_key) or {}
+                    verify_method = current_state.get("verify_method", "geetest")
                     
                     if verify_method == "geetest":
                         # 刷新验证链接
@@ -1092,21 +1099,18 @@ class GroupGeetestVerifyPlugin(Star):
                                     await platform_client.call_action("send_message", chat_id=gid, text=reminder_msg, parse_mode="Markdown")
                                 else:
                                     await platform_client.send_message(chat_id=gid, text=reminder_msg, parse_mode="Markdown")
-                            # 更新用户的验证状态为数学题
-                            if state_key in self.verify_states:
-                                self.verify_states[state_key]["verify_method"] = "math"
-                                self.verify_states[state_key]["question"] = question
-                                self.verify_states[state_key]["answer"] = answer
+                            if self.db.contains(state_key):
+                                await self.db.update_field(state_key, "verify_method", "math")
+                                await self.db.update_field(state_key, "question", question)
+                                await self.db.update_field(state_key, "answer", answer)
                             logger.info(f"[Geetest Verify] 用户 {uid} 极验验证失败，已回退到数学题验证")
                     else:
-                        # 数学题验证，直接发送提醒
-                        question = self.verify_states[state_key].get("question", "")
+                        question = current_state.get("question", "")
                         if not question:
-                            # 如果没有问题，重新生成
                             question, answer = self._generate_math_problem()
-                            if state_key in self.verify_states:
-                                self.verify_states[state_key]["question"] = question
-                                self.verify_states[state_key]["answer"] = answer
+                            if self.db.contains(state_key):
+                                await self.db.update_field(state_key, "question", question)
+                                await self.db.update_field(state_key, "answer", answer)
                         
                         reminder_msg = f"{at_user} 验证剩余最后 1 分钟，请尽快完成验证！\n请在 {timeout_minutes} 分钟内回答数学题：{question}"
                         if platform == "aiocqhttp":
@@ -1124,7 +1128,7 @@ class GroupGeetestVerifyPlugin(Star):
             await asyncio.sleep(60)
 
             state_key = f"{gid}:{uid}"
-            if state_key not in self.verify_states:
+            if not self.db.contains(state_key):
                 return
 
             at_user = f"[CQ:at,qq={uid}]" if platform == "aiocqhttp" else f"[用户](tg://user?id={uid})"
@@ -1146,7 +1150,7 @@ class GroupGeetestVerifyPlugin(Star):
             
             await asyncio.sleep(kick_delay)
 
-            if state_key not in self.verify_states:
+            if not self.db.contains(state_key):
                 return
             
             if platform == "aiocqhttp":
@@ -1161,6 +1165,9 @@ class GroupGeetestVerifyPlugin(Star):
                     await platform_client.kick_chat_member(chat_id=gid, user_id=int(uid))
             
             logger.info(f"[Geetest Verify] 用户 {uid} 验证超时，已从群 {gid} 踢出")
+            
+            await self.db.delete(state_key)
+            self._tasks.pop(state_key, None)
             
             kick_msg = f"{at_user} 因未在规定时间内完成验证，已被请出本群。"
             if platform == "aiocqhttp":
@@ -1309,14 +1316,11 @@ class GroupGeetestVerifyPlugin(Star):
                 await self._send_group_message(event, gid, "❎ 请@需要重新验证的用户。")
             return
         
-        # 清除用户的验证状态
         target_state_key = f"{gid}:{target_uid}"
         
-        # 如果用户正在验证中，取消之前的任务
-        if target_state_key in self.verify_states:
-            old_task = self.verify_states[target_state_key].get("task")
-            if old_task and not old_task.done():
-                old_task.cancel()
+        old_task = self._tasks.get(target_state_key)
+        if old_task and not old_task.done():
+            old_task.cancel()
         
         # 生成新的验证问题
         question, answer = self._generate_math_problem()
@@ -1433,19 +1437,16 @@ class GroupGeetestVerifyPlugin(Star):
                 await self._send_group_message(event, gid, "❎ 请@需要绕过验证的用户")
             return
         
-        # 标记用户为绕过验证
         target_state_key = f"{gid}:{target_uid}"
         
-        # 如果用户正在验证中，取消任务
-        if target_state_key in self.verify_states:
-            old_task = self.verify_states[target_state_key].get("task")
-            if old_task and not old_task.done():
-                old_task.cancel()
+        old_task = self._tasks.get(target_state_key)
+        if old_task and not old_task.done():
+            old_task.cancel()
         
-        # 设置绕过状态
-        self.verify_states[target_state_key] = {
+        await self.db.set(target_state_key, {
             "status": "bypassed"
-        }
+        })
+        self._tasks.pop(target_state_key, None)
         
         logger.info(f"[Geetest Verify] 用户 {target_uid} 已标记为绕过验证")
         
@@ -1481,11 +1482,7 @@ class GroupGeetestVerifyPlugin(Star):
             await self._send_group_message(event, gid, "✅ 本群验证已处于开启状态")
             return
         
-        # 更新群级别配置
         self._update_group_config(gid, enabled=True)
-        
-        # 同时更新内存状态（兼容旧版本）
-        self.verify_states[f"group_{gid}_enabled"] = {"enabled": True}
         
         await self._send_group_message(event, gid, "✅ 已开启本群验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已开启验证")
@@ -1519,11 +1516,7 @@ class GroupGeetestVerifyPlugin(Star):
             await self._send_group_message(event, gid, "❎ 本群暂未开启验证")
             return
         
-        # 更新群级别配置
         self._update_group_config(gid, enabled=False)
-        
-        # 同时更新内存状态（兼容旧版本）
-        self.verify_states[f"group_{gid}_enabled"] = {"enabled": False}
         
         await self._send_group_message(event, gid, "✅ 已关闭本群验证")
         logger.info(f"[Geetest Verify] 群 {gid} 已关闭验证")

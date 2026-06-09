@@ -1,5 +1,6 @@
 import asyncio
 import re
+from pathlib import Path
 from typing import Dict
 
 import aiohttp
@@ -12,10 +13,11 @@ from .database.db import VerifyStateDB
 from .config.config import ConfigMixin
 from .platform.platform import PlatformMixin
 from .core.verifier import VerifyMixin
+from .web import WebController
 
 
 @register(
-    "group_geetest_verify",
+    "astrbot_plugin_group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
     "v1.3.0"
@@ -34,6 +36,11 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         self.session = aiohttp.ClientSession()
 
         self._load_config()
+
+        # 初始化 Web 管理页面
+        plugin_dir = Path(context.plugin_dir) if hasattr(context, "plugin_dir") else Path(__file__).parent
+        self.web = WebController(context, config, plugin_dir, on_config_saved=self._load_config)
+        self.web.register_routes()
 
     async def initialize(self):
         """实现异步的插件初始化方法，当加载并实例化该插件类之后会自动调用该方法。"""

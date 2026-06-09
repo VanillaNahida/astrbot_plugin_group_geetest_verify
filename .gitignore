@@ -208,3 +208,6 @@ __marimo__/
 
 # API README
 API_README.md
+
+# Plugin internal state (runtime data)
+_internal_state.json

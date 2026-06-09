@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>验证群配置管理</title>
+    <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/VanillaNahida/BA-Spark-Cursor/fonts/Blueaka/Blueaka.css" />
+    <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/VanillaNahida/BA-Spark-Cursor/fonts/Blueaka_Bold/Blueaka_Bold.css" />
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+    <div class="page-shell">
+        <section class="workspace-shell">
+            <div class="workspace-grid">
+                <aside id="groupListPanel" class="group-list-panel">
+                    <div class="toolbar-stack">
+                        <div class="workspace-actions">
+                            <div class="workspace-status">
+                                <button class="ghost-button" id="toggleThemeBtn">主题: 自动</button>
+                                <button class="ghost-button" id="addGroupBtn">+ 添加群配置</button>
+                            </div>
+                        </div>
+                        <label class="toolbar-field grow">
+                            <input id="groupSearchInput" type="search" placeholder="输入群号筛选" aria-label="搜索群" />
+                        </label>
+                    </div>
+
+                    <div class="list-meta-row">
+                        <span id="groupListCount">0 个群配置</span>
+                    </div>
+
+                    <div id="groupList" class="group-list empty-state">
+                        群配置列表加载后会显示在这里。
+                    </div>
+                </aside>
+
+                <section id="groupDetailPanel" class="group-detail-panel">
+                    <div id="groupDetailContent" class="detail-stack">
+                        <div id="groupDetailHeader" class="detail-header" style="display:none">
+                            <img id="groupInfoAvatar" class="detail-header-avatar" alt="群头像" />
+                            <div class="detail-header-info">
+                                <div id="groupInfoName" class="detail-header-name">未选择群</div>
+                                <div id="groupInfoSub" class="detail-header-sub"></div>
+                            </div>
+                        </div>
+
+                        <div id="groupForm" class="form-stack"></div>
+
+                        <div class="sticky-actions">
+                            <button class="ghost-button" id="deleteGroupBtn" style="display:none">删除此群配置</button>
+                            <button class="primary-button" id="saveGroupBtn">保存当前配置</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </div>
+
+    <div class="toast-layer" id="toastLayer"></div>
+
+    <div id="addGroupModal" class="modal-overlay" style="display:none">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">选择要添加配置的群</div>
+                <button class="modal-close" id="modalCloseBtn">&times;</button>
+            </div>
+            <label class="toolbar-field modal-search">
+                <input id="modalSearchInput" type="search" placeholder="搜索群名或群号" aria-label="搜索群" />
+            </label>
+            <div id="modalGroupList" class="modal-group-list">
+                <div class="modal-loading">加载中...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="primary-button" id="modalConfirmBtn" disabled>确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteConfirmModal" class="modal-overlay" style="display:none">
+        <div class="modal-card modal-card-sm">
+            <div class="modal-header">
+                <div class="modal-title">确认删除</div>
+                <button class="modal-close" id="deleteConfirmCloseBtn">&times;</button>
+            </div>
+            <div class="modal-body" id="deleteConfirmBody">确定要删除此群配置吗？</div>
+            <div class="modal-footer">
+                <button class="ghost-button" id="deleteConfirmCancelBtn">取消</button>
+                <button class="primary-button modal-danger-btn" id="deleteConfirmOkBtn">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+</body>
+</html>

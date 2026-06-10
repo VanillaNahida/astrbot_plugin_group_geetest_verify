@@ -93,7 +93,7 @@
 # bug反馈
 如果在使用过程中遇到任何问题，请通过以下方式反馈：
 - [Issue](https://github.com/VanillaNahida/Group-Geetest-Verify/issues)
-- QQ群：[195260107](https://qm.qq.com/q/1od5TMYrKE)
+- QQ群：[195260107](https://qm.qq.com/q/1od5TMYrKE) （处理最快）
 
 # QQ群：
  - 一群：621457510

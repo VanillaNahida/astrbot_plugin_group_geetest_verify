@@ -151,21 +151,18 @@ class PlatformMixin(GeetestAPIMixin):
     async def _kick_member(self, event, gid: int, uid: str):
         """根据平台踢出成员"""
         platform = self._get_platform(event)
-        try:
-            platform_client = self.context.get_platform(platform).get_client()
+        platform_client = self.context.get_platform(platform).get_client()
 
-            if platform == "telegram":
-                if hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("kickChatMember", chat_id=gid, user_id=int(uid))
-                else:
-                    await platform_client.kick_chat_member(chat_id=gid, user_id=int(uid))
+        if platform == "telegram":
+            if hasattr(platform_client, "call_action"):
+                await platform_client.call_action("kickChatMember", chat_id=gid, user_id=int(uid))
             else:
-                if hasattr(platform_client, "api"):
-                    await platform_client.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
-                elif hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
-        except Exception as e:
-            logger.error(f"[Geetest Verify] 踢出成员失败: {e}")
+                await platform_client.kick_chat_member(chat_id=gid, user_id=int(uid))
+        else:
+            if hasattr(platform_client, "api"):
+                await platform_client.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
+            elif hasattr(platform_client, "call_action"):
+                await platform_client.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
 
     async def _get_user_info(self, event, uid: str) -> dict:
         """根据平台获取用户信息"""

@@ -209,33 +209,27 @@ class VerifyMixin:
             if not self.db.contains(state_key):
                 return
 
-            if platform == "aiocqhttp":
-                if hasattr(platform_client, "api"):
-                    await platform_client.api.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
-                else:
-                    await platform_client.call_action("set_group_kick", group_id=gid, user_id=int(uid), reject_add_request=False)
-            else:
-                if hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("kickChatMember", chat_id=gid, user_id=int(uid))
-                else:
-                    await platform_client.kick_chat_member(chat_id=gid, user_id=int(uid))
+            await self._kick_member(event, gid, uid)
 
             logger.info(f"[Geetest Verify] 用户 {uid} 验证超时，已从群 {gid} 踢出")
 
             await self.db.delete(state_key)
             self._tasks.pop(state_key, None)
 
-            kick_msg = self.kick_message.format(at_user=at_user)
-            if platform == "aiocqhttp":
-                if hasattr(platform_client, "api"):
-                    await platform_client.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+            try:
+                kick_msg = self.kick_message.format(at_user=at_user)
+                if platform == "aiocqhttp":
+                    if hasattr(platform_client, "api"):
+                        await platform_client.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
+                    else:
+                        await platform_client.call_action("send_group_msg", group_id=gid, message=kick_msg)
                 else:
-                    await platform_client.call_action("send_group_msg", group_id=gid, message=kick_msg)
-            else:
-                if hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("send_message", chat_id=gid, text=kick_msg, parse_mode="Markdown")
-                else:
-                    await platform_client.send_message(chat_id=gid, text=kick_msg, parse_mode="Markdown")
+                    if hasattr(platform_client, "call_action"):
+                        await platform_client.call_action("send_message", chat_id=gid, text=kick_msg, parse_mode="Markdown")
+                    else:
+                        await platform_client.send_message(chat_id=gid, text=kick_msg, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"[Geetest Verify] 发送踢出通知消息失败 (用户 {uid}): {e}")
 
         except asyncio.CancelledError:
             logger.info(f"[Geetest Verify] 踢出任务已取消 (用户 {uid})")

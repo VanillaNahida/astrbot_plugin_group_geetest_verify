@@ -20,6 +20,16 @@ _CONFIG_KEYS = [
     "timeout_reminder_geetest", "timeout_reminder_math",
 ]
 
+_PROMPT_CONFIG_KEYS = [
+    "new_member_prompt", "welcome_message", "wrong_answer_prompt",
+    "error_verification", "failure_message", "kick_message",
+    "too_many_wrong_message", "too_many_wrong_kick_message",
+    "wrong_code_message", "too_many_non_code_message",
+    "geetest_new_member_prompt", "geetest_wrong_code_prompt",
+    "level_no_info_message", "level_too_low_message", "level_pass_message",
+    "timeout_reminder_geetest", "timeout_reminder_math",
+]
+
 
 class ConfigMixin:
     """配置管理相关方法"""
@@ -168,7 +178,7 @@ class ConfigMixin:
         required_fields = ["__template_key", "group_id", "enabled", "verification_timeout",
                           "kick_delay", "max_wrong_answers", "enable_geetest_verify", "enable_level_verify",
                           "min_qq_level", "verify_delay", "recall_unverified_messages", "prompt_unverified_user",
-                          "welcome_image"]
+                          "welcome_image"] + _PROMPT_CONFIG_KEYS
 
         for field in required_fields:
             if field not in group_config:
@@ -196,6 +206,8 @@ class ConfigMixin:
                     group_config[field] = self.prompt_unverified_user
                 elif field == "welcome_image":
                     group_config[field] = self.welcome_image
+                elif field in _PROMPT_CONFIG_KEYS:
+                    group_config[field] = getattr(self, field, "")
 
         # 保存配置
         self._save_config()
@@ -213,11 +225,11 @@ class ConfigMixin:
                     "enable_level_verify": group_config.get("enable_level_verify", self.enable_level_verify),
                     "min_qq_level": group_config.get("min_qq_level", self.min_qq_level),
                     "verify_delay": group_config.get("verify_delay", self.verify_delay),
-                    "error_verification": group_config.get("error_verification", self.error_verification),
+                    "error_verification": group_config.get("error_verification") or self.error_verification,
                     "recall_unverified_messages": group_config.get("recall_unverified_messages", self.recall_unverified_messages),
                     "prompt_unverified_user": group_config.get("prompt_unverified_user", self.prompt_unverified_user),
-                    "welcome_image": group_config.get("welcome_image", self.welcome_image)
-                }
+                    "welcome_image": group_config.get("welcome_image", self.welcome_image),
+                } | {key: group_config.get(key) or getattr(self, key) for key in _PROMPT_CONFIG_KEYS}
 
         return {
             "enabled": False,
@@ -231,8 +243,8 @@ class ConfigMixin:
             "error_verification": self.error_verification,
             "recall_unverified_messages": self.recall_unverified_messages,
             "prompt_unverified_user": self.prompt_unverified_user,
-            "welcome_image": self.welcome_image
-        }
+            "welcome_image": self.welcome_image,
+        } | {key: getattr(self, key) for key in _PROMPT_CONFIG_KEYS}
 
     async def _sync_config_to_db(self):
         """同步配置到数据库中待验证的记录"""

@@ -90,7 +90,9 @@ class PlatformMixin(GeetestAPIMixin):
             return f"[CQ:at,qq={uid}]"
 
     async def _send_group_message(self, event, gid: int, message: str):
-        """根据平台发送群消息"""
+        """根据平台发送群消息。如果 message 为空则不发送。"""
+        if not message:
+            return
         platform = self._get_platform(event)
         try:
             platform_client = self.context.get_platform(platform).get_client()
@@ -121,7 +123,9 @@ class PlatformMixin(GeetestAPIMixin):
         return resolved
 
     async def _send_group_message_with_image(self, event, gid: int, text: str, image_path: str = None):
-        """发送群消息，附带图片"""
+        """发送群消息，附带图片。如果 text 和 image_path 都为空则不发送。"""
+        if not text and not image_path:
+            return
         if not image_path:
             return await self._send_group_message(event, gid, text)
 

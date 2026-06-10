@@ -252,6 +252,108 @@
             "type": "int",
             "default": 5,
             "hint": "发送'验证超时'消息后，等待多少秒再执行踢人操作。默认 5 秒。"
+          },
+          "new_member_prompt": {
+            "description": "数学题验证-新成员入群提示语",
+            "type": "string",
+            "default": "",
+            "hint": "数学题验证模式下，用户入群时的提示语。可用变量: {at_user}, {question}, {timeout} (分钟)。留空则使用全局配置。"
+          },
+          "welcome_message": {
+            "description": "验证成功提示语",
+            "type": "string",
+            "default": "",
+            "hint": "用户验证成功后发送的消息。可用变量: {at_user}。留空则使用全局配置。"
+          },
+          "wrong_answer_prompt": {
+            "description": "数学题验证-答案错误提示语",
+            "type": "string",
+            "default": "",
+            "hint": "数学题验证模式下，用户回答错误后发送的消息。可用变量: {at_user}, {question}, {remaining} (剩余尝试次数)。留空则使用全局配置。"
+          },
+          "error_verification": {
+            "description": "未验证用户发言提示",
+            "type": "string",
+            "default": "",
+            "hint": "用户入群未验证时发送消息的提示。可用变量: {at_user}, {timeout} (分钟)。留空则使用全局配置。"
+          },
+          "failure_message": {
+            "description": "验证超时提示语",
+            "type": "string",
+            "default": "",
+            "hint": "用户因超时而验证失败后，踢出前发送的消息。可用变量: {at_user}, {countdown} (踢出延迟秒数)。留空则使用全局配置。"
+          },
+          "kick_message": {
+            "description": "最终踢出提示语",
+            "type": "string",
+            "default": "",
+            "hint": "用户被踢出后发送的公开消息。可用变量: {at_user}。留空则使用全局配置。"
+          },
+          "too_many_wrong_message": {
+            "description": "错误次数过多踢出提示语",
+            "type": "string",
+            "default": "",
+            "hint": "用户回答错误次数过多时发送的消息。可用变量: {at_user}, {count} (错误次数)。留空则使用全局配置。"
+          },
+          "too_many_wrong_kick_message": {
+            "description": "错误次数过多踢出后提示语",
+            "type": "string",
+            "default": "",
+            "hint": "用户因错误次数过多被踢出后发送的公开消息。可用变量: {at_user}。留空则使用全局配置。"
+          },
+          "wrong_code_message": {
+            "description": "验证码错误简短提示",
+            "type": "string",
+            "default": "",
+            "hint": "用户未启用提示时发送非验证码消息的简短错误提示。可用变量: {at_user}。留空则使用全局配置。"
+          },
+          "too_many_non_code_message": {
+            "description": "非验证码消息过多踢出提示语",
+            "type": "string",
+            "default": "",
+            "hint": "用户连续发送非验证码消息达到上限时发送的消息。可用变量: {at_user}, {count} (错误次数)。留空则使用全局配置。"
+          },
+          "geetest_new_member_prompt": {
+            "description": "极验验证-新成员入群提示语",
+            "type": "string",
+            "default": "",
+            "hint": "极验验证模式下，用户入群时的提示语。可用变量: {at_user}, {timeout} (分钟), {url} (验证链接)。留空则使用全局配置。"
+          },
+          "geetest_wrong_code_prompt": {
+            "description": "极验验证-验证码错误提示语",
+            "type": "string",
+            "default": "",
+            "hint": "极验验证模式下，用户验证码错误后发送的消息。可用变量: {at_user}, {url} (验证链接), {remaining} (剩余尝试次数)。留空则使用全局配置。"
+          },
+          "level_no_info_message": {
+            "description": "等级查询不到/查询失败提示语",
+            "type": "string",
+            "default": "",
+            "hint": "启用等级验证时，查询不到用户QQ等级时发送的消息。可用变量: {at_user}。留空则使用全局配置。"
+          },
+          "level_too_low_message": {
+            "description": "等级低于要求提示语",
+            "type": "string",
+            "default": "",
+            "hint": "启用等级验证时，用户QQ等级低于要求时发送的消息。可用变量: {at_user}, {qq_level} (用户等级), {min_level} (最低要求等级)。留空则使用全局配置。"
+          },
+          "level_pass_message": {
+            "description": "等级验证通过提示语",
+            "type": "string",
+            "default": "",
+            "hint": "启用等级验证时，用户QQ等级达标时发送的消息。可用变量: {at_user}, {qq_level} (用户等级), {min_level} (最低要求等级)。留空则使用全局配置。"
+          },
+          "timeout_reminder_geetest": {
+            "description": "超时提醒-极验验证",
+            "type": "string",
+            "default": "",
+            "hint": "验证超时前1分钟的提醒消息（极验验证模式）。可用变量: {at_user}, {url} (验证链接)。留空则使用全局配置。"
+          },
+          "timeout_reminder_math": {
+            "description": "超时提醒-数学题验证",
+            "type": "string",
+            "default": "",
+            "hint": "验证超时前1分钟的提醒消息（数学题验证模式）。可用变量: {at_user}, {question} (数学题)。留空则使用全局配置。"
           }
         }
       }

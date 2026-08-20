@@ -11,6 +11,7 @@ from astrbot.api.star import Context, Star, StarTools, register
 
 from .database.db import VerifyStateDB
 from .config.config import ConfigMixin
+from .core.permissions import should_check_bot_group_role
 from .platform.platform import PlatformMixin
 from .core.verifier import VerifyMixin
 from .web import WebController
@@ -146,6 +147,15 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         if gid is None:
             logger.warning("[Geetest Verify] 无法获取群组 ID，跳过新成员处理")
             return
+
+        if should_check_bot_group_role(platform):
+            group_config = self._get_group_config(gid)
+            if not group_config["enabled"]:
+                return
+
+            bot_is_admin = await self._is_current_bot_group_admin(event, gid)
+            if bot_is_admin is False:
+                return
 
         users = []
         if platform == "telegram":

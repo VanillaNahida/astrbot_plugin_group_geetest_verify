@@ -43,33 +43,33 @@ async def query_current_bot_group_role(
 ) -> Optional[str]:
     """Query the role of the bot bound to an event's OneBot API client.
 
-    Lookup failures deliberately return None so the caller can preserve the
-    existing verification flow (fail-open). Explicit roles are returned for
-    the caller to distinguish administrators from ordinary members.
+    Missing identifiers or role fields return None. OneBot action failures
+    propagate so the platform layer can log them before preserving the existing
+    verification flow (fail-open).
     """
-    try:
-        raw = event.message_obj.raw_message
+    get_self_id = getattr(event, "get_self_id", None)
+    self_id = get_self_id() if callable(get_self_id) else None
+
+    if self_id in (None, ""):
+        raw = getattr(getattr(event, "message_obj", None), "raw_message", None)
         self_id = raw_getter(raw, "self_id", None)
 
-        if self_id in (None, ""):
-            get_self_id = getattr(event, "get_self_id", None)
-            if callable(get_self_id):
-                self_id = get_self_id()
-
-        if self_id in (None, ""):
-            return None
-
-        bot_id = int(self_id)
-        api = getattr(getattr(event, "bot", None), "api", None)
-        call_action = getattr(api, "call_action", None)
-        if not callable(call_action):
-            return None
-
-        result = await call_action(
-            "get_group_member_info",
-            group_id=int(group_id),
-            user_id=bot_id,
-        )
-        return normalize_group_member_role(result)
-    except Exception:
+    if self_id in (None, ""):
         return None
+
+    bot_id = int(self_id)
+    bot = getattr(event, "bot", None)
+    call_action = getattr(bot, "call_action", None)
+    if not callable(call_action):
+        api = getattr(bot, "api", None)
+        call_action = getattr(api, "call_action", None)
+    if not callable(call_action):
+        raise RuntimeError("event-bound OneBot API client is unavailable")
+
+    result = await call_action(
+        "get_group_member_info",
+        self_id=bot_id,
+        group_id=int(group_id),
+        user_id=bot_id,
+    )
+    return normalize_group_member_role(result)

@@ -1,5 +1,12 @@
 # 更新日志 (CHANGELOG)
 
+# [v1.3.4] fix: 仅由群管理员机器人发起入群验证
+
+- QQ/aiocqhttp 机器人仅在群角色为 `admin` 或 `owner` 时发起入群验证。
+- 使用事件 `self_id` 路由 OneBot API，避免多机器人连接时查询到错误账号。
+- 权限查询失败时记录警告并沿用原有验证流程。
+- 若同一群内多个机器人均为管理员且都接收 `group_increase`，仍需在 QQ/NapCat 端仅保留一个机器人接收该事件。
+
 # [v1.3.3] chore: release v1.3.3 and fix bugs
 
 修复两个主要问题：

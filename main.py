@@ -11,6 +11,8 @@ from astrbot.api.star import Context, Star, StarTools, register
 
 from .database.db import VerifyStateDB
 from .config.config import ConfigMixin
+from .core.permissions import should_check_bot_group_role
+from .core.version import PLUGIN_VERSION_TAG
 from .platform.platform import PlatformMixin
 from .core.verifier import VerifyMixin
 from .web import WebController
@@ -20,7 +22,7 @@ from .web import WebController
     "astrbot_plugin_group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.3.0"
+    PLUGIN_VERSION_TAG,
 )
 class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
     def __init__(self, context: Context, config: dict = None):
@@ -146,6 +148,15 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         if gid is None:
             logger.warning("[Geetest Verify] 无法获取群组 ID，跳过新成员处理")
             return
+
+        if should_check_bot_group_role(platform):
+            group_config = self._get_group_config(gid)
+            if not group_config["enabled"]:
+                return
+
+            bot_is_admin = await self._is_current_bot_group_admin(event, gid)
+            if bot_is_admin is False:
+                return
 
         users = []
         if platform == "telegram":

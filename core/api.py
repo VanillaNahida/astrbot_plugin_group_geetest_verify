@@ -2,11 +2,11 @@ import logging
 from urllib.parse import urlparse
 import aiohttp
 
-from astrbot.core.config.default import VERSION
+from astrbot.core.config.default import VERSION as ASTRBOT_VERSION
+
+from .version import PLUGIN_VERSION
 
 logger = logging.getLogger(__name__)
-
-PLUGIN_VERSION = "1.3.0"
 
 
 class GeetestAPIMixin:
@@ -22,7 +22,7 @@ class GeetestAPIMixin:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"AstrBot/v{VERSION} group_geetest_verify/v{PLUGIN_VERSION}"
+            "User-Agent": f"AstrBot/v{ASTRBOT_VERSION} group_geetest_verify/v{PLUGIN_VERSION}"
         }
         data = {
             "group_id": str(gid),
@@ -62,7 +62,7 @@ class GeetestAPIMixin:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"AstrBot/v{VERSION} group_geetest_verify/v{PLUGIN_VERSION}"
+            "User-Agent": f"AstrBot/v{ASTRBOT_VERSION} group_geetest_verify/v{PLUGIN_VERSION}"
         }
         data = {
             "group_id": str(gid),

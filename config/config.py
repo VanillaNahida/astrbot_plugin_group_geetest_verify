@@ -138,6 +138,9 @@ class ConfigMixin:
             self.config["group_configs"] = self.group_configs
             # 保存到磁盘
             self.config.save_config()
+            # 重新加载配置，确保内存状态与磁盘数据同步
+            # 避免 WebUI 页面配置与群内指令配置之间出现不一致
+            self._load_config()
             logger.info("[Geetest Verify] 配置已保存到文件")
         except Exception as e:
             logger.error(f"[Geetest Verify] 更新配置失败: {e}")
@@ -155,7 +158,7 @@ class ConfigMixin:
         if not group_config:
             group_config = {
                 "__template_key": "default_config",
-                "group_id": gid,
+                "group_id": str(gid),
                 "enabled": False,
                 "verification_timeout": self.verification_timeout,
                 "kick_delay": self.kick_delay,

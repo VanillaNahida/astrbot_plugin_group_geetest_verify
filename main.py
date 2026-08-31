@@ -9,7 +9,7 @@ from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, StarTools, register
 
-from .database.db import VerifyStateDB
+from .core.database.db import VerifyStateDB
 from .config.config import ConfigMixin
 from .platform.platform import PlatformMixin
 from .core.verifier import VerifyMixin
@@ -20,7 +20,7 @@ from .web import WebController
     "astrbot_plugin_group_geetest_verify",
     "香草味的纳西妲喵（VanillaNahida）& 不穿胖次の小奶猫（NyaNyagulugulu）",
     "入群网页验证插件",
-    "v1.3.0"
+    "v1.3.4"
 )
 class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
     def __init__(self, context: Context, config: dict = None):
@@ -221,15 +221,13 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
             if skip_verify:
                 continue
 
-            question, answer = self._generate_math_problem()
-
-            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，生成验证问题: {question} (答案: {answer})")
+            logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 入群，启动验证流程")
 
             if group_config["verify_delay"] > 0:
                 logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {group_config['verify_delay']} 秒后发送验证消息")
                 await asyncio.sleep(group_config['verify_delay'])
 
-            await self._start_verification_process(event, uid, gid, question, answer, is_new_member=True, group_config=group_config)
+            await self._start_verification_process(event, uid, gid, is_new_member=True, group_config=group_config)
 
     async def _process_verification_message(self, event: AstrMessageEvent):
         """处理群消息以进行验证"""
@@ -260,7 +258,8 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         is_verification_answer = False
 
         if verify_method == "geetest":
-            match = re.search(r'([A-Za-z0-9]{6})', text)
+            # 匹配独立的6位字母数字验证码，避免匹配到长字符串的子串
+            match = re.search(r'(?<![A-Za-z0-9])([A-Za-z0-9]{6})(?![A-Za-z0-9])', text)
             if match:
                 is_verification_answer = True
         else:
@@ -327,7 +326,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         verify_method = state.get("verify_method", "geetest")
 
         if verify_method == "geetest":
-            match = re.search(r'([A-Za-z0-9]{6})', text)
+            match = re.search(r'(?<![A-Za-z0-9])([A-Za-z0-9]{6})(?![A-Za-z0-9])', text)
             if not match:
                 return
             user_code = match.group(1)
@@ -381,7 +380,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                     event.stop_event()
                     return
 
-                await self._start_verification_process(event, uid, gid, "", 0, is_new_member=False, group_config=group_config)
+                await self._start_verification_process(event, uid, gid, is_new_member=False, group_config=group_config)
                 event.stop_event()
         else:
             try:
@@ -441,8 +440,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                     event.stop_event()
                     return
 
-                question, answer = self._generate_math_problem()
-                await self._start_verification_process(event, uid, gid, question, answer, is_new_member=False, group_config=group_config)
+                await self._start_verification_process(event, uid, gid, is_new_member=False, group_config=group_config)
                 event.stop_event()
 
     async def _process_member_decrease(self, event: AstrMessageEvent):
@@ -587,11 +585,9 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         if old_task and not old_task.done():
             old_task.cancel()
 
-        question, answer = self._generate_math_problem()
+        logger.info(f"[Geetest Verify] 用户 {target_uid} 被强制重新验证")
 
-        logger.info(f"[Geetest Verify] 用户 {target_uid} 被强制重新验证，生成问题: {question} (答案: {answer})")
-
-        await self._start_verification_process(event, target_uid, gid, question, answer, is_new_member=True)
+        await self._start_verification_process(event, target_uid, gid, is_new_member=True)
 
         at_target_user = self._format_user_mention(event, target_uid)
         await self._send_group_message(event, gid, f"已要求 {at_target_user} 重新验证")

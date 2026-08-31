@@ -136,7 +136,12 @@ class PageService:
         """获取默认群配置（disposal.default 或从全局配置推断）"""
         disposal = self._get_internal("disposal", {})
         if "default" in disposal:
-            return copy.deepcopy(disposal["default"])
+            result = copy.deepcopy(disposal["default"])
+            # 合并全局配置中缺失的字段，确保新群能继承全局设置（如 enable_geetest_verify）
+            for key in self.default_schema:
+                if key != "group_id" and key not in result and key in self.config:
+                    result[key] = copy.deepcopy(self.config[key])
+            return result
         # 从全局配置推断默认值
         result = {}
         for key in self.default_schema:

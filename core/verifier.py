@@ -25,8 +25,8 @@ class VerifyMixin:
             question = f"{num1} - {num2} = ?"
             return question, answer
 
-    async def _start_verification_process(self, event, uid: str, gid: int, question: str, answer: int, is_new_member: bool, group_config: dict = None):
-        """为用户启动或重启验证流程"""
+    async def _start_verification_process(self, event, uid: str, gid: int, question: str = None, answer: int = None, is_new_member: bool = True, group_config: dict = None):
+        """为用户启动或重启验证流程。question/answer 仅在数学题模式下使用，若未提供则自动生成。"""
         state_key = f"{gid}:{uid}"
 
         if group_config is None:
@@ -39,19 +39,22 @@ class VerifyMixin:
         task = asyncio.create_task(self._timeout_kick(uid, gid, group_config["verification_timeout"], event))
         self._tasks[state_key] = task
 
+        # 决定验证方式：极验优先，回退到数学题
+        use_geetest = bool(group_config.get("enable_geetest_verify")) and bool(self.api_key)
+        verify_method = "geetest" if use_geetest else "math"
+
         if is_new_member:
             await self.db.set(state_key, {
                 "status": "pending",
                 "question": question,
                 "answer": answer,
                 "wrong_count": 0,
-                "verify_method": "geetest",
+                "verify_method": verify_method,
                 "max_wrong_answers": group_config["max_wrong_answers"]
             })
         else:
             existing = self.db.get_cached(state_key) or {}
             wrong_count = existing.get("wrong_count", 0)
-            verify_method = existing.get("verify_method", "geetest")
             await self.db.set(state_key, {
                 "status": "pending",
                 "question": question,
@@ -64,25 +67,33 @@ class VerifyMixin:
         at_user = self._format_user_mention(event, uid)
         timeout_minutes = group_config["verification_timeout"] // 60
 
-        if group_config["enable_geetest_verify"] and self.api_key:
+        if use_geetest:
             try:
-                verify_url_path = await self._create_geetest_verify(gid, uid)
-                if verify_url_path:
+                verify_url = await self._create_geetest_verify(gid, uid)
+                if verify_url:
                     await self.db.update_field(state_key, "verify_method", "geetest")
-                    full_verify_url = f"{self.api_base_url}{verify_url_path}"
                     if is_new_member:
-                        prompt_message = self.geetest_new_member_prompt.format(at_user=at_user, timeout=timeout_minutes, url=full_verify_url)
+                        prompt_message = self.geetest_new_member_prompt.format(at_user=at_user, timeout=timeout_minutes, url=verify_url)
                     else:
                         current_state = self.db.get_cached(state_key) or {}
                         wrong_count = current_state.get("wrong_count", 0)
                         remaining_attempts = group_config["max_wrong_answers"] - wrong_count
-                        prompt_message = self.geetest_wrong_code_prompt.format(at_user=at_user, url=full_verify_url, remaining=remaining_attempts)
+                        prompt_message = self.geetest_wrong_code_prompt.format(at_user=at_user, url=verify_url, remaining=remaining_attempts)
                     await self._send_group_message(event, gid, prompt_message)
+                    logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 已发送极验验证链接")
                     return
             except Exception as e:
                 logger.warning(f"[Geetest Verify] 调用极验 API 失败: {e}，回退到算术验证")
 
+        # 数学题模式：若未提供题目则自动生成
+        if not question or answer is None:
+            question, answer = self._generate_math_problem()
+            await self.db.update_field(state_key, "question", question)
+            await self.db.update_field(state_key, "answer", answer)
+
         await self.db.update_field(state_key, "verify_method", "math")
+        logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 使用数学题验证，问题: {question} (答案: {answer})")
+
         if is_new_member:
             prompt_message = self.new_member_prompt.format(at_user=at_user, timeout=timeout_minutes, question=question)
         else:
@@ -115,6 +126,24 @@ class VerifyMixin:
                 logger.error(f"[Geetest Verify] 无法获取平台客户端 {platform}，踢出流程中断 (用户 {uid}): {e}")
                 return
 
+        async def send_timeout_message(message: str, action: str):
+            """发送超时流程消息，失败不阻断后续踢人。"""
+            if not message:
+                return
+            try:
+                if platform == "aiocqhttp":
+                    if hasattr(platform_client, "api"):
+                        await platform_client.api.call_action("send_group_msg", group_id=gid, message=message)
+                    else:
+                        await platform_client.call_action("send_group_msg", group_id=gid, message=message)
+                else:
+                    if hasattr(platform_client, "call_action"):
+                        await platform_client.call_action("send_message", chat_id=gid, text=message, parse_mode="Markdown")
+                    else:
+                        await platform_client.send_message(chat_id=gid, text=message, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"[Geetest Verify] {action}失败 (用户 {uid})，继续执行超时踢出流程: {e}")
+
         try:
             if timeout > 120:
                 await asyncio.sleep(timeout - 60)
@@ -127,35 +156,16 @@ class VerifyMixin:
                     verify_method = current_state.get("verify_method", "geetest")
 
                     if verify_method == "geetest":
-                        verify_url_path = await self._create_geetest_verify(gid, uid)
+                        verify_url = await self._create_geetest_verify(gid, uid)
 
-                        if verify_url_path:
-                            full_verify_url = f"{self.api_base_url}{verify_url_path}"
-                            reminder_msg = self.timeout_reminder_geetest.format(at_user=at_user, url=full_verify_url)
-                            if platform == "aiocqhttp":
-                                if hasattr(platform_client, "api"):
-                                    await platform_client.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                                else:
-                                    await platform_client.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                            else:
-                                if hasattr(platform_client, "call_action"):
-                                    await platform_client.call_action("send_message", chat_id=gid, text=reminder_msg, parse_mode="Markdown")
-                                else:
-                                    await platform_client.send_message(chat_id=gid, text=reminder_msg, parse_mode="Markdown")
-                            logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送提醒")
+                        if verify_url:
+                            reminder_msg = self.timeout_reminder_geetest.format(at_user=at_user, url=verify_url)
+                            await send_timeout_message(reminder_msg, "发送极验超时提醒")
+                            logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已处理提醒发送")
                         else:
                             question, answer = self._generate_math_problem()
                             reminder_msg = self.timeout_reminder_math.format(at_user=at_user, question=question)
-                            if platform == "aiocqhttp":
-                                if hasattr(platform_client, "api"):
-                                    await platform_client.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                                else:
-                                    await platform_client.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                            else:
-                                if hasattr(platform_client, "call_action"):
-                                    await platform_client.call_action("send_message", chat_id=gid, text=reminder_msg, parse_mode="Markdown")
-                                else:
-                                    await platform_client.send_message(chat_id=gid, text=reminder_msg, parse_mode="Markdown")
+                            await send_timeout_message(reminder_msg, "发送数学题超时提醒")
                             if self.db.contains(state_key):
                                 await self.db.update_field(state_key, "verify_method", "math")
                                 await self.db.update_field(state_key, "question", question)
@@ -170,17 +180,8 @@ class VerifyMixin:
                                 await self.db.update_field(state_key, "answer", answer)
 
                         reminder_msg = self.timeout_reminder_math.format(at_user=at_user, question=question)
-                        if platform == "aiocqhttp":
-                            if hasattr(platform_client, "api"):
-                                await platform_client.api.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                            else:
-                                await platform_client.call_action("send_group_msg", group_id=gid, message=reminder_msg)
-                        else:
-                            if hasattr(platform_client, "call_action"):
-                                await platform_client.call_action("send_message", chat_id=gid, text=reminder_msg, parse_mode="Markdown")
-                            else:
-                                await platform_client.send_message(chat_id=gid, text=reminder_msg, parse_mode="Markdown")
-                        logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已发送数学题提醒")
+                        await send_timeout_message(reminder_msg, "发送数学题超时提醒")
+                        logger.info(f"[Geetest Verify] 用户 {uid} 验证剩余 1 分钟，已处理数学题提醒发送")
 
             await asyncio.sleep(60)
 
@@ -193,23 +194,18 @@ class VerifyMixin:
             kick_delay = group_config.get("kick_delay", self.kick_delay)
 
             failure_msg = self.failure_message.format(at_user=at_user, countdown=kick_delay)
-            if platform == "aiocqhttp":
-                if hasattr(platform_client, "api"):
-                    await platform_client.api.call_action("send_group_msg", group_id=gid, message=failure_msg)
-                else:
-                    await platform_client.call_action("send_group_msg", group_id=gid, message=failure_msg)
-            else:
-                if hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("send_message", chat_id=gid, text=failure_msg, parse_mode="Markdown")
-                else:
-                    await platform_client.send_message(chat_id=gid, text=failure_msg, parse_mode="Markdown")
+            await send_timeout_message(failure_msg, "发送超时踢出预告")
 
             await asyncio.sleep(kick_delay)
 
             if not self.db.contains(state_key):
                 return
 
-            await self._kick_member(event, gid, uid)
+            try:
+                await self._kick_member(event, gid, uid)
+            except Exception as e:
+                logger.error(f"[Geetest Verify] 踢出用户 {uid} 失败: {e}", exc_info=True)
+                return
 
             logger.info(f"[Geetest Verify] 用户 {uid} 验证超时，已从群 {gid} 踢出")
 
@@ -218,16 +214,7 @@ class VerifyMixin:
 
             try:
                 kick_msg = self.kick_message.format(at_user=at_user)
-                if platform == "aiocqhttp":
-                    if hasattr(platform_client, "api"):
-                        await platform_client.api.call_action("send_group_msg", group_id=gid, message=kick_msg)
-                    else:
-                        await platform_client.call_action("send_group_msg", group_id=gid, message=kick_msg)
-                else:
-                    if hasattr(platform_client, "call_action"):
-                        await platform_client.call_action("send_message", chat_id=gid, text=kick_msg, parse_mode="Markdown")
-                    else:
-                        await platform_client.send_message(chat_id=gid, text=kick_msg, parse_mode="Markdown")
+                await send_timeout_message(kick_msg, "发送踢出通知消息")
             except Exception as e:
                 logger.warning(f"[Geetest Verify] 发送踢出通知消息失败 (用户 {uid}): {e}")
 

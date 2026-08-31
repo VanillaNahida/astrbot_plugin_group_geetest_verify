@@ -1,6 +1,7 @@
 import os
 import logging
 from ..core.api import GeetestAPIMixin
+from ..core.permissions import query_current_bot_group_role, role_allows_verification
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,34 @@ class PlatformMixin(GeetestAPIMixin):
                 return vars(raw)
             except Exception:
                 return {}
+
+    async def _is_current_bot_group_admin(self, event, gid: int):
+        """检查当前事件绑定的 QQ 机器人是否为群管理员。"""
+        try:
+            role = await query_current_bot_group_role(event, gid, self._get_raw_value)
+        except Exception as exc:
+            logger.warning(
+                "[Geetest Verify] 查询群 %s 当前机器人权限失败（%s），继续验证流程",
+                gid,
+                type(exc).__name__,
+            )
+            return None
+
+        allowed = role_allows_verification(role)
+        if allowed is True:
+            logger.debug("[Geetest Verify] 当前机器人在群 %s 的角色为 %s", gid, role)
+        elif allowed is False:
+            logger.info(
+                "[Geetest Verify] 当前机器人在群 %s 的角色为 %s，跳过入群验证",
+                gid,
+                role,
+            )
+        else:
+            logger.warning(
+                "[Geetest Verify] 未能获取群 %s 当前机器人的有效群角色，继续验证流程",
+                gid,
+            )
+        return allowed
 
     def _get_group_id(self, platform: str, raw) -> int:
         """安全地获取群组 ID"""

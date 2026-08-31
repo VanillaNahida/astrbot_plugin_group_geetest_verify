@@ -55,8 +55,10 @@
 如果您没有自己的公网服务器和域名，也可以使用开发者部署好的服务。
 
 ### 获取后端地址和API Key
-请加群 [195260107](https://qm.qq.com/q/1od5TMYrKE) 联系开发者，获取验证后端的 URL 和 API Key。
-直接私聊说明来意即可，看到了就会回复。
+请加群 [195260107](https://qm.qq.com/q/1od5TMYrKE) 获取验证后端的 URL 和 API Key。  
+**在群内发送“/申请密钥”命令，bot会自动发送密钥到你的QQ邮箱**  
+若需要自定义接收密钥的邮箱，请使用这个命令：“/申请密钥 example@example.com”，将 `example@example.com` 替换为你自己的邮箱
+如果签发失败，请直接私聊我，说明来意即可，看到了就会回复。
 
 ### 插件配置
 1. 在插件市场搜索插件 `astrbot_plugin_group_geetest_verify` 或 `入群网页验证插件`

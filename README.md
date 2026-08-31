@@ -70,7 +70,8 @@
 
   > [!TIP]
   >
-  > 安装并配置好插件后建议**重启bot**，确保插件生效。
+  > 安装并配置好插件后建议**重启bot**，确保插件生效。  
+  > 如果遇到了什么奇奇怪怪的bug，可以试试重新安装插件，或者删除配置重新初始化插件。
 
 # 命令总览
 
@@ -93,9 +94,9 @@
 - [astrbot_plugin_Group-Verification_PRO](https://github.com/huntuo146/astrbot_plugin_Group-Verification_PRO) 参考该代码实现的入群验证插件，感谢该项目作者。
 
 # bug反馈
-如果在使用过程中遇到任何问题，请通过以下方式反馈：
+如果在使用过程中遇到任何问题，欢迎你通过以下方式反馈：
 - [Issue](https://github.com/VanillaNahida/Group-Geetest-Verify/issues)
-- QQ群：[195260107](https://qm.qq.com/q/1od5TMYrKE) （处理最快）
+- QQ群：[195260107](https://qm.qq.com/q/1od5TMYrKE) （处理最快，预计一周内解决）
 
 # QQ群：
  - 一群：621457510

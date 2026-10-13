@@ -13,6 +13,38 @@ class PlatformMixin(GeetestAPIMixin):
         """获取事件所属的平台"""
         return event.get_platform_name()
 
+    def _get_platform_client(self, event=None):
+        """返回与当前事件绑定的平台客户端。
+
+        多机器人（同类型多个适配器实例）场景下，绝不能用
+        context.get_platform("aiocqhttp")：该方法按适配器 *类型名* 匹配，
+        永远返回 platform_insts 里第一个实例（配置中的第一个账号），
+        会把消息/踢人全部路由到第一个机器人。
+        """
+        if event is None:
+            raise RuntimeError(
+                "[Geetest Verify] 缺少事件上下文，无法确定机器人实例"
+            )
+
+        bot = getattr(event, "bot", None)
+        if bot is not None:
+            return bot
+
+        platform_id = None
+        get_pid = getattr(event, "get_platform_id", None)
+        if callable(get_pid):
+            platform_id = get_pid()
+        if platform_id:
+            inst = self.context.get_platform_inst(platform_id)
+            if inst is not None:
+                return inst.get_client()
+
+        name = getattr(event, "get_platform_name", lambda: None)()
+        inst = self.context.get_platform(name)
+        if inst is None:
+            raise RuntimeError(f"[Geetest Verify] 找不到平台实例: {name}")
+        return inst.get_client()
+
     def _get_raw_value(self, raw, key: str, default=None):
         """安全地从 raw_message 中获取值，兼容字典和 Telegram Update 对象"""
         if isinstance(raw, dict):
@@ -124,7 +156,7 @@ class PlatformMixin(GeetestAPIMixin):
             return
         platform = self._get_platform(event)
         try:
-            platform_client = self.context.get_platform(platform).get_client()
+            platform_client = self._get_platform_client(event)
 
             if platform == "telegram":
                 if hasattr(platform_client, "call_action"):
@@ -164,7 +196,7 @@ class PlatformMixin(GeetestAPIMixin):
 
         platform = self._get_platform(event)
         try:
-            platform_client = self.context.get_platform(platform).get_client()
+            platform_client = self._get_platform_client(event)
 
             if platform == "telegram":
                 if hasattr(platform_client, "call_action"):
@@ -184,7 +216,7 @@ class PlatformMixin(GeetestAPIMixin):
     async def _kick_member(self, event, gid: int, uid: str):
         """根据平台踢出成员"""
         platform = self._get_platform(event)
-        platform_client = self.context.get_platform(platform).get_client()
+        platform_client = self._get_platform_client(event)
 
         if platform == "telegram":
             if hasattr(platform_client, "call_action"):
@@ -208,7 +240,7 @@ class PlatformMixin(GeetestAPIMixin):
                 return {}
         else:
             try:
-                user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_stranger_info", user_id=int(uid))
+                user_info = await self._get_platform_client(event).api.call_action("get_stranger_info", user_id=int(uid))
                 return user_info
             except Exception:
                 return {}

@@ -539,7 +539,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                         logger.info(f"[Geetest Verify] 找到 mention: {mention_text}")
                         try:
                             username = mention_text.lstrip('@')
-                            platform_client = self.context.get_platform("telegram").get_client()
+                            platform_client = self._get_platform_client(event)
                             if hasattr(platform_client, "call_action"):
                                 logger.info(f"[Geetest Verify] 尝试获取用户 {username} 的信息")
 
@@ -649,7 +649,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                         mention_text = text[self._get_raw_value(entity, "offset"):self._get_raw_value(entity, "offset") + self._get_raw_value(entity, "length")]
                         try:
                             username = mention_text.lstrip('@')
-                            platform_client = self.context.get_platform("telegram").get_client()
+                            platform_client = self._get_platform_client(event)
                             if hasattr(platform_client, "call_action"):
                                 chat_member = await platform_client.call_action("getChatMember", chat_id=gid, username=username)
                                 if chat_member:
@@ -668,7 +668,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                         username = username_match.group(1)
                         logger.info(f"[Geetest Verify] 从 message_str 中提取到 username: {username}")
                         try:
-                            platform_client = self.context.get_platform("telegram").get_client()
+                            platform_client = self._get_platform_client(event)
                             if hasattr(platform_client, "call_action"):
                                 chat_member = await platform_client.call_action("getChatMember", chat_id=gid, username=username)
                                 if chat_member:

@@ -113,7 +113,7 @@ class VerifyMixin:
 
         if event is None:
             try:
-                platform_client = self.context.get_platform("aiocqhttp").get_client()
+                platform_client = self._get_platform_client(event)
                 platform = "aiocqhttp"
             except Exception:
                 logger.error(f"[Geetest Verify] 无法获取平台客户端，踢出流程中断 (用户 {uid})")
@@ -121,7 +121,7 @@ class VerifyMixin:
         else:
             platform = self._get_platform(event)
             try:
-                platform_client = self.context.get_platform(platform).get_client()
+                platform_client = self._get_platform_client(event)
             except Exception as e:
                 logger.error(f"[Geetest Verify] 无法获取平台客户端 {platform}，踢出流程中断 (用户 {uid}): {e}")
                 return
@@ -223,10 +223,10 @@ class VerifyMixin:
         except Exception as e:
             logger.error(f"[Geetest Verify] 踢出流程发生错误 (用户 {uid}): {e}")
 
-    async def _get_user_level(self, uid: str) -> int:
+    async def _get_user_level(self, uid: str, event=None) -> int:
         """获取用户QQ等级"""
         try:
-            user_info = await self.context.get_platform("aiocqhttp").get_client().api.call_action("get_stranger_info", user_id=int(uid))
+            user_info = await self._get_platform_client(event).api.call_action("get_stranger_info", user_id=int(uid))
             logger.info(f"[Geetest Verify] 用户 {uid} 的API返回数据: {user_info}")
 
             qq_level = 0
@@ -264,7 +264,7 @@ class VerifyMixin:
                 return False
 
             try:
-                platform_client = self.context.get_platform(platform).get_client()
+                platform_client = self._get_platform_client(event)
                 chat_member = None
                 if hasattr(platform_client, "call_action"):
                     chat_member = await platform_client.call_action("getChatMember", chat_id=gid, user_id=self._get_raw_value(from_user, "id"))

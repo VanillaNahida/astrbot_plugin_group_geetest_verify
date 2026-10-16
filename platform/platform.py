@@ -128,14 +128,14 @@ class PlatformMixin(GeetestAPIMixin):
 
             if platform == "telegram":
                 if hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("send_message", chat_id=gid, text=message, parse_mode="Markdown")
+                    return await platform_client.call_action("send_message", chat_id=gid, text=message, parse_mode="Markdown")
                 else:
-                    await platform_client.send_message(chat_id=gid, text=message, parse_mode="Markdown")
+                    return await platform_client.send_message(chat_id=gid, text=message, parse_mode="Markdown")
             else:
                 if hasattr(platform_client, "api"):
-                    await platform_client.api.call_action("send_group_msg", group_id=gid, message=message)
+                    return await platform_client.api.call_action("send_group_msg", group_id=gid, message=message)
                 elif hasattr(platform_client, "call_action"):
-                    await platform_client.call_action("send_group_msg", group_id=gid, message=message)
+                    return await platform_client.call_action("send_group_msg", group_id=gid, message=message)
         except Exception as e:
             logger.error(f"[Geetest Verify] 发送消息失败: {e}")
 

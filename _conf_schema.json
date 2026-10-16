@@ -167,6 +167,12 @@
     "default": false,
     "hint": "如果启用，将撤回未验证用户发送的非验证码消息。默认关闭。"
   },
+  "recall_verification_messages": {
+    "description": "验证结束后撤回过程消息",
+    "type": "bool",
+    "default": false,
+    "hint": "仅支持 QQ/OneBot。验证结束后撤回机器人发送的等级提示、验证链接、错误提示、倒计时等过程消息，保留成功、免验证和最终踢出通知。不撤回用户验证码；仅记录启用后本次运行期间发送的消息，重启前记录不恢复。默认关闭，已记录的轮次仍会完成清理。"
+  },
   "prompt_unverified_user": {
     "description": "是否提示用户完成验证",
     "type": "bool",
@@ -222,6 +228,12 @@
             "type": "bool",
             "default": false,
             "hint": "如果启用，将撤回未验证用户发送的非验证码消息。默认关闭。"
+          },
+          "recall_verification_messages": {
+            "description": "验证结束后撤回过程消息",
+            "type": "bool",
+            "default": false,
+            "hint": "仅支持 QQ/OneBot。验证结束后撤回机器人过程消息，保留成功、免验证和最终踢出通知，不撤回用户验证码。仅记录启用后本次运行期间发送的消息，重启前记录不恢复；已记录的轮次仍会完成清理。"
           },
           "prompt_unverified_user": {
             "description": "是否提示用户完成验证",

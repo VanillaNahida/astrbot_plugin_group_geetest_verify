@@ -34,6 +34,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         db_path = self._data_dir / "verify_states.db"
         self.db = VerifyStateDB(db_path)
         self._tasks: Dict[str, asyncio.Task] = {}
+        self._verification_messages = {}
 
         self.session = aiohttp.ClientSession()
 
@@ -202,13 +203,20 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
 
             group_config = self._get_group_config(gid)
 
+            if self._find_verification_messages(event, gid, uid, any_bot=True) is not None:
+                continue
+            message_round = self._verification_message_round(event, gid, uid, group_config)
             await asyncio.sleep(2)
+            if message_round is not None and message_round.closed:
+                continue
 
             at_user = self._format_user_mention(event, uid)
             skip_verify = False
 
             if platform == "aiocqhttp" and group_config["enable_level_verify"]:
                 qq_level = await self._get_user_level(uid)
+                if message_round is not None and message_round.closed:
+                    continue
                 if qq_level == 0:
                     message = self.level_no_info_message.format(at_user=at_user)
                 else:
@@ -221,10 +229,11 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                         "status": "verified",
                         "verify_time": asyncio.get_event_loop().time()
                     })
+                    await self._finish_verification_messages(message_round)
                     skip_verify = True
                 else:
                     logger.info(f"[Geetest Verify] 用户 {uid} QQ等级为 {qq_level}，低于最低等级要求 {group_config['min_qq_level']}，将进入验证流程")
-                    await self._send_group_message(event, gid, message)
+                    await self._send_verification_message(event, gid, message, message_round)
 
             if platform == "telegram":
                 logger.info(f"[Geetest Verify] 用户 {uid} 在 Telegram 群 {gid} 入群，直接进入验证流程")
@@ -238,6 +247,8 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                 logger.info(f"[Geetest Verify] 群 {gid} 新成员 {uid} 入群，将在 {group_config['verify_delay']} 秒后发送验证消息")
                 await asyncio.sleep(group_config['verify_delay'])
 
+            if message_round is not None and message_round.closed:
+                continue
             await self._start_verification_process(event, uid, gid, is_new_member=True, group_config=group_config)
 
     async def _process_verification_message(self, event: AstrMessageEvent):
@@ -260,6 +271,8 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
         if state.get("status") != "pending":
             return
 
+        group_config = self._get_group_config(gid)
+        message_round = self._verification_message_round(event, gid, uid, group_config, any_bot=True)
         text = event.message_str.strip()
 
         group_config = self._get_group_config(gid)
@@ -299,7 +312,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                     at_user = self._format_user_mention(event, uid)
                     timeout_minutes = group_config["verification_timeout"] // 60
                     error_msg = self.error_verification.format(at_user=at_user, timeout=timeout_minutes)
-                    await self._send_group_message(event, gid, error_msg)
+                    await self._send_verification_message(event, gid, error_msg, message_round)
                     logger.info(f"[Geetest Verify] 已向未验证用户 {uid} 发送验证提示")
                 except Exception as e:
                     logger.warning(f"[Geetest Verify] 发送验证提示失败: {e}")
@@ -312,7 +325,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                 try:
                     at_user = self._format_user_mention(event, uid)
                     error_msg = self.wrong_code_message.format(at_user=at_user)
-                    await self._send_group_message(event, gid, error_msg)
+                    await self._send_verification_message(event, gid, error_msg, message_round)
                 except Exception as e:
                     logger.warning(f"[Geetest Verify] 发送错误提示失败: {e}")
 
@@ -320,12 +333,19 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                     try:
                         at_user = self._format_user_mention(event, uid)
                         kick_msg = self.too_many_non_code_message.format(at_user=at_user, count=wrong_count)
-                        await self._send_group_message(event, gid, kick_msg)
+                        await self._send_verification_message(event, gid, kick_msg, message_round)
                         await asyncio.sleep(2)
-                        await self._kick_member(event, gid, uid)
+                        if message_round is not None and message_round.closed:
+                            return
+                        await self._kick_verifying_member(event, gid, uid, message_round)
                         logger.info(f"[Geetest Verify] 用户 {uid} 因连续发送非验证码消息 {wrong_count} 次，已被踢出群 {gid}")
                         await self.db.delete(state_key)
-                        self._tasks.pop(state_key, None)
+                        task = self._tasks.pop(state_key, None)
+                        if task and not task.done():
+                            task.cancel()
+                        await self._finish_verification_messages(message_round)
+                        final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
+                        await self._send_group_message(event, gid, final_msg)
                     except Exception as e:
                         logger.error(f"[Geetest Verify] 踢出用户 {uid} 失败: {e}")
 
@@ -343,6 +363,8 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
             user_code = match.group(1)
 
             is_valid = await self._check_geetest_verify(gid, uid, user_code)
+            if message_round is not None and message_round.closed:
+                return
 
             if is_valid:
                 logger.info(f"[Geetest Verify] 用户 {uid} 在群 {gid} 验证成功")
@@ -355,6 +377,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                 })
                 self._tasks.pop(state_key, None)
 
+                await self._finish_verification_messages(message_round)
                 at_user = self._format_user_mention(event, uid)
                 welcome_msg = self.welcome_message.format(at_user=at_user)
                 welcome_image = group_config.get("welcome_image", self.welcome_image)
@@ -377,16 +400,19 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
 
                     at_user = self._format_user_mention(event, uid)
                     kick_msg = self.too_many_wrong_message.format(at_user=at_user, count=wrong_count)
-                    await self._send_group_message(event, gid, kick_msg)
+                    await self._send_verification_message(event, gid, kick_msg, message_round)
 
                     await asyncio.sleep(2)
-                    await self._kick_member(event, gid, uid)
-
-                    final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
-                    await self._send_group_message(event, gid, final_msg)
+                    if message_round is not None and message_round.closed:
+                        return
+                    await self._kick_verifying_member(event, gid, uid, message_round)
 
                     await self.db.delete(state_key)
                     self._tasks.pop(state_key, None)
+                    await self._finish_verification_messages(message_round)
+
+                    final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
+                    await self._send_group_message(event, gid, final_msg)
 
                     event.stop_event()
                     return
@@ -415,6 +441,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
                 })
                 self._tasks.pop(state_key, None)
 
+                await self._finish_verification_messages(message_round)
                 at_user = self._format_user_mention(event, uid)
                 welcome_msg = self.welcome_message.format(at_user=at_user)
                 welcome_image = group_config.get("welcome_image", self.welcome_image)
@@ -437,16 +464,19 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
 
                     at_user = self._format_user_mention(event, uid)
                     kick_msg = self.too_many_wrong_message.format(at_user=at_user, count=wrong_count)
-                    await self._send_group_message(event, gid, kick_msg)
+                    await self._send_verification_message(event, gid, kick_msg, message_round)
 
                     await asyncio.sleep(2)
-                    await self._kick_member(event, gid, uid)
-
-                    final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
-                    await self._send_group_message(event, gid, final_msg)
+                    if message_round is not None and message_round.closed:
+                        return
+                    await self._kick_verifying_member(event, gid, uid, message_round)
 
                     await self.db.delete(state_key)
                     self._tasks.pop(state_key, None)
+                    await self._finish_verification_messages(message_round)
+
+                    final_msg = self.too_many_wrong_kick_message.format(at_user=at_user)
+                    await self._send_group_message(event, gid, final_msg)
 
                     event.stop_event()
                     return
@@ -473,7 +503,17 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
 
         state_key = f"{gid}:{uid}"
 
+        # Every connected bot may receive the same leave notice. Clean each
+        # sender's round through its own client, regardless of notice order.
+        message_rounds = [
+            item for item in getattr(self, "_verification_messages", {}).values()
+            if platform == "aiocqhttp" and item.key[-2:] == (int(gid), str(uid))
+        ]
+        if any(item.kicking for item in message_rounds):
+            return
         if not self.db.contains(state_key):
+            for message_round in message_rounds:
+                await self._finish_verification_messages(message_round)
             return
 
         task = self._tasks.get(state_key)
@@ -482,6 +522,8 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
 
         await self.db.delete(state_key)
         self._tasks.pop(state_key, None)
+        for message_round in message_rounds:
+            await self._finish_verification_messages(message_round)
 
         logger.info(f"[Geetest Verify] 用户 {uid} 已离开群 {gid}，清除验证状态")
 
@@ -598,6 +640,20 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
 
         logger.info(f"[Geetest Verify] 用户 {target_uid} 被强制重新验证")
 
+        message_round = self._find_verification_messages(event, gid, target_uid, any_bot=True)
+        if message_round is not None:
+            # Reject old replies before the first network wait for recalls.
+            message_round.closed = True
+            replacement_state = dict(self.db.get_cached(target_state_key) or {})
+            replacement_state["status"] = "superseded"
+            await self.db.set(target_state_key, replacement_state)
+        await self._finish_verification_messages(message_round)
+        # A departure deletes this marker; a newer admin operation replaces it.
+        # Neither may be undone when slow platform recalls finally complete.
+        if (message_round is not None
+                and self.db.get_cached(target_state_key) is not replacement_state):
+            event.stop_event()
+            return
         await self._start_verification_process(event, target_uid, gid, is_new_member=True)
 
         at_target_user = self._format_user_mention(event, target_uid)
@@ -702,6 +758,7 @@ class GroupGeetestVerifyPlugin(ConfigMixin, PlatformMixin, VerifyMixin, Star):
             "status": "bypassed"
         })
         self._tasks.pop(target_state_key, None)
+        await self._finish_verification_messages(self._find_verification_messages(event, gid, target_uid, any_bot=True))
 
         logger.info(f"[Geetest Verify] 用户 {target_uid} 已标记为绕过验证")
 
